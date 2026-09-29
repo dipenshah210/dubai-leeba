@@ -31,7 +31,6 @@
       </div>
       <button id="staffBtn" class="btn btn-lock" title="Staff sign-in" hidden>&#128274;<span>STAFF</span></button>
       <button id="salesBtn" class="btn btn-gold btn-sales" title="Sales and today's tally" hidden>SALES<b hidden></b></button>
-      <button id="costBtn" class="btn btn-lock" title="Internal cost view">&#128274;<span>COST</span></button>
     </div>
   </div>
 
@@ -81,11 +80,11 @@
       <div class="f"><label>DIAMOND SHAPE</label><div class="chips wrap" id="fShape"></div></div>
 
       <div class="f">
-        <label>PRICE (USD)</label>
+        <label>PRICE (AED)</label>
         <div class="chips wrap" id="fPrice"></div>
         <div class="pair">
-          <input id="prMin" type="number" step="100" min="0" placeholder="min" inputmode="numeric">
-          <input id="prMax" type="number" step="100" min="0" placeholder="max" inputmode="numeric">
+          <input id="prMin" type="number" step="500" min="0" placeholder="min" inputmode="numeric">
+          <input id="prMax" type="number" step="500" min="0" placeholder="max" inputmode="numeric">
         </div>
       </div>
 
@@ -240,8 +239,8 @@
       <label class="sf">PRICE
         <div class="sale-price">
           <div class="chips" id="saleCur">
-            <button type="button" class="chip is-on" data-cur="USD">USD</button>
-            <button type="button" class="chip" data-cur="AED">AED</button>
+            <button type="button" class="chip is-on" data-cur="AED">AED</button>
+            <button type="button" class="chip" data-cur="USD">USD</button>
           </div>
           <input id="salePrice" type="number" min="0" step="1" inputmode="decimal">
         </div>
@@ -288,24 +287,6 @@
         <button class="btn btn-gold" id="spExport">EXPORT DAY TO EXCEL</button>
       </div>
     </div>
-  </div>
-</div>
-
-<!-- ============================================================== cost -->
-<div class="modal" id="unlock" hidden>
-  <div class="modal-card unlock-card">
-    <button class="icon-btn modal-x" data-close>&times;</button>
-    <h2 class="u-title">INTERNAL COST VIEW</h2>
-    <p class="u-note">Selling prices are on show to everyone. Cost, margin and the pricing
-      build-up are encrypted and open only with the internal passcode &mdash; keep this view
-      closed when a customer is at the screen.</p>
-    <form id="unlockForm" autocomplete="off">
-      <input id="pass" type="password" placeholder="Internal passcode" autocomplete="off">
-      <label class="u-keep"><input type="checkbox" id="keep" checked> Stay open in this tab</label>
-      <div class="u-err" id="uErr" hidden>Wrong passcode.</div>
-      <button class="btn btn-gold wide" id="uGo" type="submit">OPEN COST VIEW</button>
-    </form>
-    <button id="relock" class="btn btn-ghost wide" hidden>CLOSE COST VIEW</button>
   </div>
 </div>
 

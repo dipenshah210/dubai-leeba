@@ -88,6 +88,15 @@ function imgs(p) {
                       : (p.IMAGE ? [p.IMAGE] : []);
 }
 function sellOf(p) { return p.SELLING_PRICE_USD === undefined ? null : p.SELLING_PRICE_USD; }
+/* Prices are shown in dirhams, with dollars small alongside. The catalogue is priced
+   in USD; AED is the fixed peg. Filters, collections and totals all work in AED. */
+var RATE = CFG.AED_PER_USD || 3.6725;
+function aedOf(p) { var u = sellOf(p); return u ? Math.round(u * RATE) : null; }
+function aed(n) {
+  if (n === null || n === undefined || isNaN(n)) return "";
+  return "AED " + Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+function kAED(n) { return n >= 1000 ? (n / 1000) + "K" : String(n); }
 function costOf(p) { return cost && cost[p.SKU] ? cost[p.SKU] : null; }
 /* What this piece's status is right now. A change made here that the server has
    not confirmed yet wins, so the button responds instantly; then the server's
@@ -190,6 +199,20 @@ function clearStaff() {
   try { localStorage.removeItem(KEY + "staff"); sessionStorage.removeItem(KEY + "staff"); } catch (e) {}
   staffButtons();
 }
+/* This device has been signed out - someone used the same code on another device,
+   or the code was removed. Anything not yet sent stays here and goes out if the
+   same person signs in again on this device. */
+function kicked(why) {
+  if (!staff) return;
+  var who = staff.who;
+  clearStaff();
+  $("#salesPanel").hidden = true; $("#sale").hidden = true;
+  if (detailSku && !$("#detail").hidden) openDetail(detailSku);
+  syncPill();
+  window.alert(why === "signed in elsewhere"
+    ? "Signed out: the code for " + who + " was just used on another device.\n\nEach code works on one device at a time."
+    : "Signed out: this staff code is no longer valid.");
+}
 function staffButtons() {
   $("#staffBtn").hidden = !STOCK_ON || !!staff;
   $("#salesBtn").hidden = !STOCK_ON || !staff;
@@ -249,11 +272,12 @@ function pollStock() {
 
 function loadSales() {
   if (!STOCK_ON || !staff) return Promise.resolve();
-  return fetch(STOCK_URL + "?action=sales&code=" + encodeURIComponent(staff.code) + "&t=" + Date.now())
+  return fetch(STOCK_URL + "?action=sales&code=" + encodeURIComponent(staff.code) +
+               "&token=" + encodeURIComponent(staff.token || "") + "&t=" + Date.now())
     .then(function (r) { return r.json(); })
     .then(function (j) {
       if (!j) return;
-      if (!j.ok) { if (j.error === "bad code") { clearStaff(); toast("Staff code no longer valid"); } return; }
+      if (!j.ok) { if (j.error === "bad code" || j.error === "signed in elsewhere") kicked(j.error); return; }
       sales = j.sales || []; salesAt = j.at || Date.now();
       if (!$("#salesPanel").hidden) renderSales();
       if (detailSku && !$("#detail").hidden) openDetail(detailSku);
@@ -267,13 +291,14 @@ function loadSales() {
    straight to Apps Script without an OPTIONS call Apps Script cannot answer. */
 function send(payload) {
   payload.code = staff ? staff.code : "";
+  payload.token = staff ? staff.token : "";
   return fetch(STOCK_URL, { method: "POST", body: JSON.stringify(payload) })
     .then(function (r) { return r.json(); })
     .then(function (j) {
       online = true;
       if (j && j.stock) mergeRemote(j.stock);
       if (!j || !j.ok) {
-        if (j && j.error === "bad code") { clearStaff(); toast("Staff code no longer valid"); return { ok: false, net: true }; }
+        if (j && (j.error === "bad code" || j.error === "signed in elsewhere")) { kicked(j.error); return { ok: false, net: true }; }
         return { ok: false, error: (j && j.error) || "refused", soldBy: j && j.soldBy };
       }
       return { ok: true };
@@ -408,7 +433,6 @@ function boot() {
       ALL = j.products || [];
       buildFilters();
       buildCollections();
-      restoreSession();
       apply();
       if (STOCK_ON) {
         pollStock();
@@ -541,23 +565,23 @@ function buildFilters() {
 /* price shortcut chips, built to sit sensibly inside the real price range */
 var BANDS = [];
 function buildPriceBands() {
-  var prices = ALL.map(sellOf).filter(function (v) { return v !== null && !isNaN(v); });
+  var prices = ALL.map(aedOf).filter(function (v) { return v !== null && !isNaN(v); });
   if (!prices.length) return;
   var max = Math.max.apply(null, prices);
-  var steps = [1000, 2000, 3000, 5000, 10000, 20000, 50000];
+  var steps = [2000, 5000, 10000, 20000, 50000, 100000, 200000];
   BANDS = [];
   var prev = null;
   steps.forEach(function (s) {
     if (prev !== null && prev >= max) return;
-    BANDS.push({ min: prev, max: s, label: prev === null ? "under " + shortMoney(s)
-                                                         : shortMoney(prev) + "-" + shortMoney(s) });
+    BANDS.push({ min: prev, max: s, label: prev === null ? "under AED " + kAED(s)
+                                                         : "AED " + kAED(prev) + "-" + kAED(s) });
     prev = s;
   });
-  if (prev !== null && max > prev) BANDS.push({ min: prev, max: null, label: shortMoney(prev) + "+" });
+  if (prev !== null && max > prev) BANDS.push({ min: prev, max: null, label: "AED " + kAED(prev) + "+" });
 
   $("#fPrice").innerHTML = BANDS.map(function (b, i) {
     var n = ALL.filter(function (p) {
-      var v = sellOf(p);
+      var v = aedOf(p);
       return v !== null && (b.min === null || v >= b.min) && (b.max === null || v < b.max);
     }).length;
     return '<button class="chip" data-band="' + i + '">' + esc(b.label) + ' <b>' + n + '</b></button>';
@@ -614,7 +638,7 @@ function buildCollections() {
   });
 }
 function matchesColl(p, d) {
-  var v = sellOf(p);
+  var v = aedOf(p);
   if (d.cat && p.CATEGORY !== d.cat) return false;
   if (d.min !== undefined && !(v >= d.min)) return false;
   if (d.max !== undefined && !(v <= d.max)) return false;
@@ -649,8 +673,8 @@ function activeBar() {
   filt.purities.forEach(function (v) { push("purities", v, v + "K"); });
   filt.shapes.forEach(function (v) { push("shapes", v, v); });
   if (filt.prMin !== null || filt.prMax !== null) {
-    push("price", "", (filt.prMin !== null ? money(filt.prMin) : "$0") + " - " +
-                      (filt.prMax !== null ? money(filt.prMax) : "any"));
+    push("price", "", (filt.prMin !== null ? aed(filt.prMin) : "AED 0") + " - " +
+                      (filt.prMax !== null ? aed(filt.prMax) : "any"));
   }
   if (filt.ctMin !== null || filt.ctMax !== null) {
     push("ct", "", (filt.ctMin !== null ? filt.ctMin : 0) + " - " +
@@ -705,8 +729,8 @@ function apply() {
     if (filt.ctMax !== null && !(p.TOTAL_CT <= filt.ctMax)) return false;
     if (filt.gwMin !== null && !(p.GROSS_WT_GM >= filt.gwMin)) return false;
     if (filt.gwMax !== null && !(p.GROSS_WT_GM <= filt.gwMax)) return false;
-    if (filt.prMin !== null && !(sellOf(p) >= filt.prMin)) return false;
-    if (filt.prMax !== null && !(sellOf(p) <= filt.prMax)) return false;
+    if (filt.prMin !== null && !(aedOf(p) >= filt.prMin)) return false;
+    if (filt.prMax !== null && !(aedOf(p) <= filt.prMax)) return false;
     if (q) {
       var hay = [p.SKU, p.DESCRIPTION, p.CATEGORY, p.SHAPES, p.CENTER_SHAPE, p.QUALITY,
                  p.METAL_RAW, p.CERT, p.CENTER_CERT].join(" ").toLowerCase();
@@ -740,11 +764,11 @@ function apply() {
 
 function stats() {
   var ct = 0, val = 0;
-  VIEW.forEach(function (p) { ct += p.TOTAL_CT || 0; val += sellOf(p) || 0; });
+  VIEW.forEach(function (p) { ct += p.TOTAL_CT || 0; val += aedOf(p) || 0; });
   $("#stats").innerHTML =
     "<b>" + VIEW.length + "</b> " + (VIEW.length === 1 ? "PIECE" : "PIECES") +
     " &nbsp;&middot;&nbsp; <b>" + ct.toFixed(2) + "</b> CT" +
-    " &nbsp;&middot;&nbsp; <span class='gold'><b>" + money(val) + "</b></span>";
+    " &nbsp;&middot;&nbsp; <span class='gold'><b>" + aed(val) + "</b></span>";
   $("#empty").hidden = VIEW.length > 0;
 }
 
@@ -787,8 +811,9 @@ function cardHTML(p) {
         specCell("TONE", p.METAL_COLOR || "") +
       '</div>' +
       '<div class="card-price">' +
-        '<span class="amt">' + (sv ? money(sv) : '<em class="por">PRICE ON REQUEST</em>') + '</span>' +
-        (p.SELL_PER_CT_USD ? '<span class="perct">' + money(p.SELL_PER_CT_USD) + '/CT</span>' : "") +
+        '<span class="amt">' + (sv ? aed(aedOf(p)) + ' <small class="usd">' + money(sv) + '</small>'
+                                   : '<em class="por">PRICE ON REQUEST</em>') + '</span>' +
+        (p.SELL_PER_CT_USD ? '<span class="perct">' + aed(Math.round(p.SELL_PER_CT_USD * RATE)) + '/CT</span>' : "") +
       '</div>' +
       (c ? '<div class="card-cost">COST ' + money(c.cost) +
            (c.markup ? ' &middot; ' + Number(c.markup).toFixed(2) + 'x' : "") + '</div>' : "") +
@@ -838,26 +863,16 @@ function openDetail(sku) {
            (i === 0 ? ' class="is-on"' : "") + ' alt="">';
   }).join("") : "";
 
-  // price band - selling price always, cost only when the internal view is open
-  var c = costOf(p), band = [];
+  // price band - dirhams first, dollars small alongside
+  var band = [];
   band.push('<div class="big"><span>SELLING PRICE</span><b>' +
-            (sellOf(p) ? money(sellOf(p)) : "ON REQUEST") + '</b></div>');
-  if (p.SELL_PER_CT_USD) band.push('<div><span>PER CARAT</span><b>' + money(p.SELL_PER_CT_USD) + '</b></div>');
-  if (c) {
-    band.push('<div><span>COST</span><b>' + money(c.cost) + '</b></div>');
-    if (c.markup) band.push('<div><span>MARKUP</span><b>' + Number(c.markup).toFixed(2) + 'x</b></div>');
-    if (c.dia) band.push('<div><span>DIAMOND</span><b>' + money(c.dia) + '</b></div>');
-    if (c.gold) band.push('<div><span>GOLD' + (c.making ? "" : " + MAKING") + '</span><b>' + money(c.gold) + '</b></div>');
-    if (c.making) band.push('<div><span>MAKING</span><b>' + money(c.making) + '</b></div>');
-    // what the piece really cost to buy, from the stock sheet - Dubai pieces only
-    if (c.real_aed) band.push('<div><span>BOUGHT AT</span><b>AED ' +
-      Number(c.real_aed).toLocaleString("en-US", { maximumFractionDigits: 0 }) + '</b></div>');
-    if (c.made || c.maker) band.push('<div><span>MADE</span><b>' +
-      esc([c.made, c.maker].filter(Boolean).join(" \u00b7 ")) + '</b></div>');
-  }
+            (sellOf(p) ? aed(aedOf(p)) : "ON REQUEST") + '</b>' +
+            (sellOf(p) ? '<em class="usd">' + money(sellOf(p)) + '</em>' : "") + '</div>');
+  if (p.SELL_PER_CT_USD) band.push('<div><span>PER CARAT</span><b>' +
+            aed(Math.round(p.SELL_PER_CT_USD * RATE)) + '</b></div>');
   var pb = $("#dPrice");
   pb.innerHTML = band.join("");
-  pb.className = "d-price" + (c ? " cost-on" : "");
+  pb.className = "d-price";
 
   // One consolidated spec grid - no fact appears more than once anywhere on the
   // page: category/location already sit in the bar above, price already sits in
@@ -950,46 +965,6 @@ function stepDetail(dir) {
   openDetail(VIEW[j].SKU);
 }
 
-/* ------------------------------------------------------- cost unlock */
-function b64(s) {
-  var bin = atob(s), a = new Uint8Array(bin.length);
-  for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
-  return a;
-}
-function decryptCost(pass) {
-  return (window.LEEBA_COST_BOX
-      ? Promise.resolve(window.LEEBA_COST_BOX)
-      : fetch(CFG.PRICES_COST || "data/prices.cost.enc.json")
-          .then(function (r) { if (!r.ok) throw new Error("missing"); return r.json(); }))
-    .then(function (box) {
-      var enc = new TextEncoder();
-      return crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveKey"])
-        .then(function (base) {
-          return crypto.subtle.deriveKey(
-            { name: "PBKDF2", salt: b64(box.salt), iterations: box.iter, hash: "SHA-256" },
-            base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
-        })
-        .then(function (key) {
-          return crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(box.iv) }, key, b64(box.data));
-        });
-    })
-    .then(function (buf) { return JSON.parse(new TextDecoder().decode(buf)); });
-}
-
-function afterCost() {
-  var on = !!cost;
-  $("#costBtn").classList.toggle("is-open", on);
-  $("#relock").hidden = !on;
-  apply();
-  if (detailSku && !$("#detail").hidden) openDetail(detailSku);
-}
-function restoreSession() {
-  var p;
-  try { p = sessionStorage.getItem(KEY + "cost"); } catch (e) { p = null; }
-  if (p) decryptCost(p).then(function (payload) { cost = payload; afterCost(); })
-                       .catch(function () { try { sessionStorage.removeItem(KEY + "cost"); } catch (e) {} });
-}
-
 /* ------------------------------------------------------------ export */
 function exportRows(picked, label) {
   if (!picked.length) { toast("Nothing selected"); return; }
@@ -1001,7 +976,7 @@ function exportRows(picked, label) {
   var head = ["SR", "SKU", "CATEGORY", "DESCRIPTION", "PURITY", "TONE", "SIZE",
               "GROSS WT (gm)", "NET GOLD (gm)", "CENTRE CT", "SIDE CT", "TOTAL CT", "PCS",
               "CENTRE STONE", "QUALITY", "SHAPES", "CERT", "AVAILABILITY",
-              "SELLING PRICE (USD)", "PER CARAT (USD)"];
+              "SELLING PRICE (AED)", "SELLING PRICE (USD)", "PER CARAT (AED)"];
   if (HAS_LOC) head.splice(2, 0, "LOCATION");
   if (cost) head = head.concat(["COST (USD)", "MARKUP"]);
 
@@ -1018,7 +993,7 @@ function exportRows(picked, label) {
       p.CENTER_STONE_CT ? [num(p.CENTER_STONE_CT) + " ct", p.CENTER_SHAPE, p.CENTER_COLOR, p.CENTER_CLARITY]
         .filter(Boolean).join(" ") : "",
       p.QUALITY || "", p.SHAPES || "", p.CENTER_CERT || p.CERT || "", availOf(p),
-      sellOf(p) || "", p.SELL_PER_CT_USD || ""];
+      aedOf(p) || "ON REQUEST", sellOf(p) || "", p.SELL_PER_CT_USD ? Math.round(p.SELL_PER_CT_USD * RATE) : ""];
     if (HAS_LOC) row.splice(2, 0, p.LOC || "");
     if (cost) {
       var c = cost[p.SKU] || {};
@@ -1068,7 +1043,7 @@ function exportRows(picked, label) {
 function exportCsv(picked) {
   var head = ["SR", "SKU", "CATEGORY", "DESCRIPTION", "PURITY", "TONE",
               "GROSS WT", "NET GOLD", "TOTAL CT", "PCS", "QUALITY", "CERT",
-              "AVAILABILITY", "SELLING PRICE"];
+              "AVAILABILITY", "SELLING PRICE (AED)", "SELLING PRICE (USD)"];
   if (HAS_LOC) head.splice(2, 0, "LOCATION");
   if (cost) head.push("COST", "MARKUP");
   var lines = [head.join(",")];
@@ -1076,7 +1051,7 @@ function exportCsv(picked) {
     var r = [i + 1, p.SKU, p.CATEGORY, p.DESCRIPTION || "",
              p.METAL_KT ? p.METAL_KT + "K" : "", p.METAL_COLOR || "", p.GROSS_WT_GM || "",
              p.NET_GOLD_WT_GM || "", p.TOTAL_CT || "", pcsOf(p) || "", p.QUALITY || "",
-             p.CENTER_CERT || p.CERT || "", availOf(p), sellOf(p) || ""];
+             p.CENTER_CERT || p.CERT || "", availOf(p), aedOf(p) || "ON REQUEST", sellOf(p) || ""];
     if (HAS_LOC) r.splice(2, 0, p.LOC || "");
     if (cost) { var c = cost[p.SKU] || {}; r.push(c.cost || "", c.markup || ""); }
     lines.push(r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(","));
@@ -1095,23 +1070,22 @@ function download(blob, name) {
 }
 
 /* ------------------------------------------------------------ sale form */
-var AED_PER_USD = (CFG.STOCK && CFG.STOCK.AED_PER_USD) || 3.6725;   // the dirham's fixed peg
+var AED_PER_USD = RATE;
 var saleSku = null, saleCur = "USD", salePay = "", priceTouched = false;
 
 function openSale(sku) {
   if (!staff) { openStaff(); return; }
   var p = ALL.find(function (x) { return x.SKU === sku; });
   if (!p) return;
-  saleSku = sku; saleCur = "USD"; salePay = ""; priceTouched = false;
+  saleSku = sku; saleCur = "AED"; salePay = ""; priceTouched = false;
   var list = sellOf(p);
   $("#saleSku").textContent = sku;
   $("#saleDesc").textContent = [p.CATEGORY, p.DESCRIPTION].filter(Boolean).join(" · ");
-  $("#saleList").textContent = list ? "List " + money(list) + "  ≈  AED " +
-    Math.round(list * AED_PER_USD).toLocaleString("en-US") : "";
+  $("#saleList").textContent = list ? "List " + aed(aedOf(p)) + "  (" + money(list) + ")" : "";
   $("#saleClient").value = "";
-  $("#salePrice").value = list ? Math.round(list) : "";
+  $("#salePrice").value = list ? aedOf(p) : "";
   $("#saleRemark").value = "";
-  $$("#saleCur .chip").forEach(function (c) { c.classList.toggle("is-on", c.dataset.cur === "USD"); });
+  $$("#saleCur .chip").forEach(function (c) { c.classList.toggle("is-on", c.dataset.cur === "AED"); });
   $$("#salePay .chip").forEach(function (c) { c.classList.remove("is-on"); });
   $("#saleWho").textContent = "Recorded as " + staff.who + " · " + prettyDay(dubaiToday()) + ", Dubai time";
   $("#saleErr").hidden = true;
@@ -1192,7 +1166,7 @@ function stockCounts() {
   ALL.forEach(function (p) {
     var st = availOf(p);
     c[st] = (c[st] || 0) + 1;
-    if (st === "AVAILABLE") c.value += sellOf(p) || 0;
+    if (st === "AVAILABLE") c.value += aedOf(p) || 0;
   });
   return c;
 }
@@ -1246,8 +1220,8 @@ function renderSales() {
         esc(salesDay === "" ? prettyDay(x.date) + " " + x.time : x.time) + "</td><td><b>" + esc(x.sku) +
         "</b><br><span>" + esc([x.category, x.description].filter(Boolean).join(" · ")) + "</span></td><td>" +
         esc(x.client) + "</td><td class='num'>" + esc(curMoney(x.price, x.currency)) +
-        (x.list && x.currency !== "AED" && Math.round(x.list) !== Math.round(x.price)
-          ? "<br><span>list " + esc(money(x.list)) + "</span>" : "") +
+        (x.list && Math.round(x.currency === "AED" ? x.list * RATE : x.list) !== Math.round(x.price)
+          ? "<br><span>list " + esc(curMoney(x.currency === "AED" ? x.list * RATE : x.list, x.currency)) + "</span>" : "") +
         "</td><td>" + esc(x.payment) + "</td><td>" + esc(x.pending ? "saving…" : x.by) + "</td><td>" +
         esc(x.remark || "") + "</td><td>" +
         (x.pending ? "" : '<button class="sp-x" data-cancel="' + esc(x.sku) + '" title="Cancel this sale">CANCEL</button>') +
@@ -1324,7 +1298,7 @@ function exportSales() {
   s0.addRow(["STOCK NOW", "PIECES", "", ""]); hdr(s0, s0.rowCount);
   [["AVAILABLE", sc.AVAILABLE], ["HOLD", sc.HOLD], ["MEMO OUT", sc["MEMO OUT"]], ["SOLD", sc.SOLD],
    ["TOTAL", sc.total]].forEach(function (r) { s0.addRow(r); });
-  s0.addRow(["Available stock at list price (USD)", "", sc.value, ""]);
+  s0.addRow(["Available stock at list price (AED)", "", "", sc.value]);
   s0.views = [];
   s0.getCell("A1").font = { bold: true, size: 13, name: "Arial", color: { argb: "FF0F4040" } };
   widths(s0);
@@ -1351,11 +1325,11 @@ function exportSales() {
   }
 
   var s3 = wb.addWorksheet("STOCK");
-  s3.addRow(["SKU", "CATEGORY", "DESCRIPTION", "STATUS", "LIST PRICE (USD)", "SOLD TO", "SOLD FOR", "SOLD BY"]);
+  s3.addRow(["SKU", "CATEGORY", "DESCRIPTION", "STATUS", "LIST PRICE (AED)", "LIST PRICE (USD)", "SOLD TO", "SOLD FOR", "SOLD BY"]);
   hdr(s3, 1);
   ALL.slice().sort(function (a, b) { return a.SKU.localeCompare(b.SKU); }).forEach(function (p) {
     var st = availOf(p), sl = st === "SOLD" ? saleOf(p.SKU) : null;
-    s3.addRow([p.SKU, p.CATEGORY, p.DESCRIPTION || "", st, sellOf(p) || "",
+    s3.addRow([p.SKU, p.CATEGORY, p.DESCRIPTION || "", st, aedOf(p) || "ON REQUEST", sellOf(p) || "",
                sl ? sl.client : "", sl ? curMoney(sl.price, sl.currency) : "", sl ? (sl.by || "") : ""]);
   });
   widths(s3);
@@ -1383,8 +1357,8 @@ function openStaff() {
 function selbar() {
   $("#selN").textContent = sel.size;
   var v = 0;
-  ALL.forEach(function (p) { if (sel.has(p.SKU)) v += sellOf(p) || 0; });
-  $("#selVal").textContent = money(v);
+  ALL.forEach(function (p) { if (sel.has(p.SKU)) v += aedOf(p) || 0; });
+  $("#selVal").textContent = aed(v);
   $("#selbar").hidden = sel.size === 0;
 }
 
@@ -1581,7 +1555,7 @@ function wire() {
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (!j || !j.ok) { $("#sErr").hidden = false; return; }
-        staff = { code: code, who: j.who };
+        staff = { code: code, who: j.who, token: j.token };
         saveStaff($("#staffKeep").checked);
         $("#staff").hidden = true;
         $("#staffCode").value = "";
@@ -1602,38 +1576,6 @@ function wire() {
     syncPill();
     if (detailSku && !$("#detail").hidden) openDetail(detailSku);
     toast("Stock control locked");
-  });
-
-  // internal cost view. The button is hidden on phones and tablets, so #cost in
-  // the address bar is the way in on a handset - nothing a customer would ever
-  // stumble into.
-  function openCost() {
-    $("#relock").hidden = !cost;
-    $("#uErr").hidden = true; $("#pass").value = "";
-    $("#unlock").hidden = false;
-    setTimeout(function () { $("#pass").focus(); }, 30);
-  }
-  if (location.hash === "#cost") openCost();
-  window.addEventListener("hashchange", function () { if (location.hash === "#cost") openCost(); });
-  $("#costBtn").addEventListener("click", openCost);
-  $("#unlockForm").addEventListener("submit", function (e) {
-    e.preventDefault();
-    var btn = $("#uGo"); btn.disabled = true; btn.textContent = "CHECKING...";
-    decryptCost($("#pass").value)
-      .then(function (payload) {
-        cost = payload;
-        if ($("#keep").checked) { try { sessionStorage.setItem(KEY + "cost", $("#pass").value); } catch (e) {} }
-        $("#unlock").hidden = true;
-        afterCost(); toast("Cost view open");
-      })
-      .catch(function () { $("#uErr").hidden = false; })
-      .then(function () { btn.disabled = false; btn.textContent = "OPEN COST VIEW"; });
-  });
-  $("#relock").addEventListener("click", function () {
-    cost = null;
-    try { sessionStorage.removeItem(KEY + "cost"); } catch (e) {}
-    $("#unlock").hidden = true;
-    afterCost(); toast("Cost view closed");
   });
 
   // FILTERS - a full-screen sheet on a phone, a collapsible rail on a desktop
