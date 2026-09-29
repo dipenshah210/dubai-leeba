@@ -77,7 +77,12 @@ function esc(s) {
   return String(s === null || s === undefined ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-function srcFor(file) { return (THUMBS && THUMBS[file]) || (IMG_BASE + file); }
+/* Supplier photos arrive with spaces and brackets in the name ("DJ - 223 (2).jpeg"),
+   so the file name is escaped before it goes into a URL. */
+function srcFor(file) {
+  if (THUMBS && THUMBS[file]) return THUMBS[file];
+  return IMG_BASE + encodeURIComponent(file);
+}
 function imgs(p) {
   return p.IMAGES_ALL ? p.IMAGES_ALL.split(",").map(function (s) { return s.trim(); })
                       : (p.IMAGE ? [p.IMAGE] : []);
@@ -285,8 +290,13 @@ function boot() {
       .then(function (m) { THUMBS = m; if (ALL.length) apply(); }).catch(function () {});
   }
 
-  fetch(CFG.CATALOG || "data/catalog.json")
-    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+  /* The offline build ships the catalogue as a plain script that sets
+     window.LEEBA_CATALOG, because a page opened straight off a disk is not
+     allowed to fetch its own data files. Hosted, it is fetched as normal. */
+  (window.LEEBA_CATALOG
+      ? Promise.resolve(window.LEEBA_CATALOG)
+      : fetch(CFG.CATALOG || "data/catalog.json")
+          .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }))
     .then(function (j) {
       ALL = j.products || [];
       buildFilters();
@@ -817,8 +827,10 @@ function b64(s) {
   return a;
 }
 function decryptCost(pass) {
-  return fetch(CFG.PRICES_COST || "data/prices.cost.enc.json")
-    .then(function (r) { if (!r.ok) throw new Error("missing"); return r.json(); })
+  return (window.LEEBA_COST_BOX
+      ? Promise.resolve(window.LEEBA_COST_BOX)
+      : fetch(CFG.PRICES_COST || "data/prices.cost.enc.json")
+          .then(function (r) { if (!r.ok) throw new Error("missing"); return r.json(); }))
     .then(function (box) {
       var enc = new TextEncoder();
       return crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveKey"])
