@@ -71,7 +71,7 @@ window.LEEBA_CONFIG = {
      five-minute setup is written at the top of it.
   ---------------------------------------------------------------- */
   STOCK: {
-    URL: "",
+    URL: "https://script.google.com/macros/s/AKfycbwEh1WxFpp4eVuQRRxWBHTREk7EZDVQG1TMvFY_KnnGxx5OYhfU17pgwikAYsUCZeV0/exec",
     POLL_SECONDS: 25
   },
 
