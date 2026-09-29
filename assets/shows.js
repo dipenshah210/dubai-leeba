@@ -51,7 +51,8 @@ function blank() {
     cats: new Set(), locs: new Set(), tones: new Set(),
     purities: new Set(), shapes: new Set(),
     q: "", avail: "", sort: "sku",
-    ctMin: null, ctMax: null, prMin: null, prMax: null, gwMin: null, gwMax: null
+    ctMin: null, ctMax: null, prMin: null, prMax: null, gwMin: null, gwMax: null,
+    offer: false
   };
 }
 var filt = blank();
@@ -89,11 +90,20 @@ function imgs(p) {
   return p.IMAGES_ALL ? p.IMAGES_ALL.split(",").map(function (s) { return s.trim(); })
                       : (p.IMAGE ? [p.IMAGE] : []);
 }
-function sellOf(p) { return p.SELLING_PRICE_USD === undefined ? null : p.SELLING_PRICE_USD; }
+/* sellOf is the price a client pays today: the SALE / PROMO price when the piece
+   has one, otherwise the normal selling price. wasOf is the normal price, only
+   for pieces on offer - it is what gets crossed out. */
+function sellOf(p) {
+  if (p.SALE_PRICE_USD) return p.SALE_PRICE_USD;
+  return p.SELLING_PRICE_USD === undefined ? null : p.SELLING_PRICE_USD;
+}
+function wasOf(p) { return p.SALE_PRICE_USD ? p.SELLING_PRICE_USD : null; }
+function offerOf(p) { return p.SALE_PRICE_USD ? (p.SALE_TYPE || "SALE") : ""; }
 /* Prices are shown in dirhams, with dollars small alongside. The catalogue is priced
    in USD; AED is the fixed peg. Filters, collections and totals all work in AED. */
 var RATE = CFG.AED_PER_USD || 3.6725;
 function aedOf(p) { var u = sellOf(p); return u ? Math.round(u * RATE) : null; }
+function wasAED(p) { var u = wasOf(p); return u ? Math.round(u * RATE) : null; }
 function aed(n) {
   if (n === null || n === undefined || isNaN(n)) return "";
   return "AED " + Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
@@ -631,8 +641,13 @@ function buildCollections() {
     var i = +b.dataset.coll;
     if (activeColl === i) { clearAll(); return; }
     var d = COLL[i].def;
+    // offer / tray collections keep the categories already picked; budget ones start clean
+    var keep = (d.sale || d.tray) && !d.cat ? new Set(filt.cats) : null;
     filt = blank();
+    if (keep) filt.cats = keep;
     if (d.cat) filt.cats.add(d.cat);
+    if (d.tray) filt.locs.add(d.tray);
+    if (d.sale) filt.offer = true;
     if (d.min !== undefined) filt.prMin = d.min;
     if (d.max !== undefined) filt.prMax = d.max;
     syncInputs();
@@ -644,6 +659,8 @@ function buildCollections() {
 function matchesColl(p, d) {
   var v = aedOf(p);
   if (d.cat && p.CATEGORY !== d.cat) return false;
+  if (d.tray && p.TRAY !== d.tray) return false;
+  if (d.sale && !offerOf(p)) return false;
   if (d.min !== undefined && !(v >= d.min)) return false;
   if (d.max !== undefined && !(v <= d.max)) return false;
   return true;
@@ -654,7 +671,7 @@ function syncColl() {
   var any = 0;
   $$("#collScroll .coll").forEach(function (c) {
     var i = +c.dataset.coll, d = COLL[i].def;
-    var show = i === activeColl || !filt.cats.size || (d.cat ? filt.cats.has(d.cat) : false);
+    var show = i === activeColl || !filt.cats.size || (d.cat ? filt.cats.has(d.cat) : !!(d.sale || d.tray));
     c.hidden = !show;
     if (show) any++;
     c.classList.toggle("is-on", i === activeColl);
@@ -690,6 +707,7 @@ function activeCount() {
   var n = filt.cats.size + filt.locs.size + filt.tones.size + filt.purities.size + filt.shapes.size;
   if (filt.q) n++;
   if (filt.avail) n++;
+  if (filt.offer) n++;
   ["ctMin", "ctMax", "prMin", "prMax", "gwMin", "gwMax"].forEach(function (k) {
     if (filt[k] !== null) n++;
   });
@@ -720,6 +738,7 @@ function activeBar() {
                    (filt.gwMax !== null ? filt.gwMax : "any") + " gm");
   }
   if (filt.avail) push("avail", "", filt.avail);
+  if (filt.offer) push("offer", "", "ON SALE");
   if (filt.q) push("q", "", '"' + filt.q + '"');
 
   var bar = $("#activeBar");
@@ -760,6 +779,7 @@ function apply() {
       if (!hit) return false;
     }
     if (filt.avail && availOf(p) !== filt.avail) return false;
+    if (filt.offer && !offerOf(p)) return false;
     if (filt.ctMin !== null && !(p.TOTAL_CT >= filt.ctMin)) return false;
     if (filt.ctMax !== null && !(p.TOTAL_CT <= filt.ctMax)) return false;
     if (filt.gwMin !== null && !(p.GROSS_WT_GM >= filt.gwMin)) return false;
@@ -826,6 +846,7 @@ function cardHTML(p) {
       (im ? '<img loading="lazy" decoding="async" src="' + esc(srcFor(im)) + '" alt="' + esc(p.SKU) + '">'
           : '<span class="noimg">NO PHOTO</span>') +
       (p.TRAY ? '<span class="card-loc loc-tray" title="' + esc(p.TRAY) + '">' + esc(p.TRAY) + '</span>' : "") +
+      (offerOf(p) ? '<span class="card-offer off-' + esc(offerOf(p)) + (p.TRAY ? " below" : "") + '">' + esc(offerOf(p)) + '</span>' : "") +
       (st !== "AVAILABLE" ? '<span class="status st-' + esc(st.replace(/\s/g, "")) + '">' + esc(st) + '</span>' : "") +
     '</div>' +
     '<button class="card-pick" data-pick="1" title="Select">&#10003;</button>' +
@@ -846,7 +867,8 @@ function cardHTML(p) {
         specCell("TONE", p.METAL_COLOR || "") +
       '</div>' +
       '<div class="card-price">' +
-        '<span class="amt">' + (sv ? aed(aedOf(p)) + ' <small class="usd">' + money(sv) + '</small>'
+        '<span class="amt">' + (sv ? (wasOf(p) ? '<s class="was">' + aed(wasAED(p)) + '</s>' : "") +
+                                     aed(aedOf(p)) + ' <small class="usd">' + money(sv) + '</small>'
                                    : '<em class="por">PRICE ON REQUEST</em>') + '</span>' +
         (p.SELL_PER_CT_USD ? '<span class="perct">' + aed(Math.round(p.SELL_PER_CT_USD * RATE)) + '/CT</span>' : "") +
       '</div>' +
@@ -900,9 +922,11 @@ function openDetail(sku) {
 
   // price band - dirhams first, dollars small alongside
   var band = [];
-  band.push('<div class="big"><span>SELLING PRICE</span><b>' +
+  var off = offerOf(p);
+  band.push('<div class="big"><span>' + (off ? off + " PRICE" : "SELLING PRICE") + '</span><b>' +
             (sellOf(p) ? aed(aedOf(p)) : "ON REQUEST") + '</b>' +
             (sellOf(p) ? '<em class="usd">' + money(sellOf(p)) + '</em>' : "") + '</div>');
+  if (off) band.push('<div class="d-offer"><span>NORMAL PRICE</span><b><s>' + aed(wasAED(p)) + '</s></b></div>');
   if (p.SELL_PER_CT_USD) band.push('<div><span>PER CARAT</span><b>' +
             aed(Math.round(p.SELL_PER_CT_USD * RATE)) + '</b></div>');
   var pb = $("#dPrice");
@@ -1011,7 +1035,7 @@ function exportRows(picked, label) {
   var head = ["SR", "SKU", "CATEGORY", "DESCRIPTION", "PURITY", "TONE", "SIZE",
               "GROSS WT (gm)", "NET GOLD (gm)", "CENTRE CT", "SIDE CT", "TOTAL CT", "PCS",
               "CENTRE STONE", "QUALITY", "SHAPES", "CERT", "AVAILABILITY",
-              "SELLING PRICE (AED)", "SELLING PRICE (USD)", "PER CARAT (AED)"];
+              "SELLING PRICE (AED)", "SELLING PRICE (USD)", "PER CARAT (AED)", "OFFER", "NORMAL PRICE (AED)"];
   if (HAS_LOC) head.splice(2, 0, "TRAY");
   if (cost) head = head.concat(["COST (USD)", "MARKUP"]);
 
@@ -1028,7 +1052,8 @@ function exportRows(picked, label) {
       p.CENTER_STONE_CT ? [num(p.CENTER_STONE_CT) + " ct", p.CENTER_SHAPE, p.CENTER_COLOR, p.CENTER_CLARITY]
         .filter(Boolean).join(" ") : "",
       p.QUALITY || "", p.SHAPES || "", p.CENTER_CERT || p.CERT || "", availOf(p),
-      aedOf(p) || "ON REQUEST", sellOf(p) || "", p.SELL_PER_CT_USD ? Math.round(p.SELL_PER_CT_USD * RATE) : ""];
+      aedOf(p) || "ON REQUEST", sellOf(p) || "", p.SELL_PER_CT_USD ? Math.round(p.SELL_PER_CT_USD * RATE) : "",
+      offerOf(p), wasAED(p) || ""];
     if (HAS_LOC) row.splice(2, 0, p.TRAY || "");
     if (cost) {
       var c = cost[p.SKU] || {};
@@ -1078,7 +1103,7 @@ function exportRows(picked, label) {
 function exportCsv(picked) {
   var head = ["SR", "SKU", "CATEGORY", "DESCRIPTION", "PURITY", "TONE",
               "GROSS WT", "NET GOLD", "TOTAL CT", "PCS", "QUALITY", "CERT",
-              "AVAILABILITY", "SELLING PRICE (AED)", "SELLING PRICE (USD)"];
+              "AVAILABILITY", "SELLING PRICE (AED)", "SELLING PRICE (USD)", "OFFER", "NORMAL PRICE (AED)"];
   if (HAS_LOC) head.splice(2, 0, "TRAY");
   if (cost) head.push("COST", "MARKUP");
   var lines = [head.join(",")];
@@ -1086,7 +1111,8 @@ function exportCsv(picked) {
     var r = [i + 1, p.SKU, p.CATEGORY, p.DESCRIPTION || "",
              p.METAL_KT ? p.METAL_KT + "K" : "", p.METAL_COLOR || "", p.GROSS_WT_GM || "",
              p.NET_GOLD_WT_GM || "", p.TOTAL_CT || "", pcsOf(p) || "", p.QUALITY || "",
-             p.CENTER_CERT || p.CERT || "", availOf(p), aedOf(p) || "ON REQUEST", sellOf(p) || ""];
+             p.CENTER_CERT || p.CERT || "", availOf(p), aedOf(p) || "ON REQUEST", sellOf(p) || "",
+             offerOf(p), wasAED(p) || ""];
     if (HAS_LOC) r.splice(2, 0, p.TRAY || "");
     if (cost) { var c = cost[p.SKU] || {}; r.push(c.cost || "", c.markup || ""); }
     lines.push(r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(","));
@@ -1116,7 +1142,8 @@ function openSale(sku) {
   var list = sellOf(p);
   $("#saleSku").textContent = sku;
   $("#saleDesc").textContent = [p.CATEGORY, p.DESCRIPTION].filter(Boolean).join(" · ");
-  $("#saleList").textContent = list ? "List " + aed(aedOf(p)) + "  (" + money(list) + ")" : "";
+  $("#saleList").textContent = list ? (offerOf(p) ? offerOf(p) + " " : "List ") + aed(aedOf(p)) + "  (" + money(list) + ")" +
+    (wasOf(p) ? "  -  normal " + aed(wasAED(p)) : "") : "";
   $("#saleClient").value = "";
   $("#salePrice").value = list ? aedOf(p) : "";
   $("#saleRemark").value = "";
@@ -1439,6 +1466,7 @@ function wire() {
     else if (kind === "ct")    { filt.ctMin = filt.ctMax = null; }
     else if (kind === "gw")    { filt.gwMin = filt.gwMax = null; }
     else if (kind === "avail") { filt.avail = ""; }
+    else if (kind === "offer") { filt.offer = false; }
     else if (kind === "q")     { filt.q = ""; }
     activeColl = -1;
     syncInputs(); syncChips(); apply();

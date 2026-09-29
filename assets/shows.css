@@ -550,3 +550,14 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
 /* AED leads, USD sits small beside it */
 .card-price .amt .usd{font-size:10.5px;font-weight:700;color:var(--ink-3);margin-left:4px}
 .d-price .big .usd{display:block;font-style:normal;font-size:12px;font-weight:700;color:rgba(255,255,255,.62);margin-top:2px}
+
+/* ------------------------------------------------------- sale / promo */
+.card-offer{position:absolute;top:0;left:0;padding:4px 9px;font-size:10px;font-weight:900;letter-spacing:.12em;color:#fff;background:var(--stop)}
+.card-offer.below{top:22px}
+.card-offer.off-PROMO{background:#b3322b}
+.card-price .was{display:block;font-size:11px;font-weight:700;color:var(--ink-3);text-decoration:line-through;margin-bottom:1px}
+.d-offer b{font-size:14px;color:#f3c9c4}
+.d-offer b s{color:#fff;opacity:.75}
+.d-offer span{color:#ff9d93}
+.is-list .card-offer{font-size:9px;padding:2px 5px}
+.is-list .card-offer.below{top:18px}

@@ -37,6 +37,8 @@ window.LEEBA_CONFIG = {
        cat    category to limit to, or leave out for all categories
        max    price ceiling in AED (optional)
        min    price floor in AED (optional)
+       sale   true = only pieces with a SALE or PROMO price
+       tray   a display tray name, e.g. "PROMO TRAY"
 
      Pick a category above and only that category's collections show;
      with ALL, every collection shows.
@@ -47,6 +49,9 @@ window.LEEBA_CONFIG = {
      re-order freely; the row scrolls.
   ---------------------------------------------------------------- */
   COLLECTIONS: [
+    { label: "On sale",                    sale: true },
+    { label: "Promo tray",                 tray: "PROMO TRAY" },
+    { label: "Under AED 2,000",            max: 2000 },
     { label: "Under AED 5,000",            max: 5000 },
     { label: "Under AED 10,000",           max: 10000 },
     { label: "Rings under AED 5,000",      cat: "RING",          max: 5000 },
