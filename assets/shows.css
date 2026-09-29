@@ -555,9 +555,9 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
 .card-offer{position:absolute;top:0;left:0;padding:4px 9px;font-size:10px;font-weight:900;letter-spacing:.12em;color:#fff;background:var(--stop)}
 .card-offer.below{top:22px}
 .card-offer.off-PROMO{background:#b3322b}
-.card-price .was{display:block;font-size:11px;font-weight:700;color:var(--ink-3);text-decoration:line-through;margin-bottom:1px}
+.card-price .was{display:block;font-size:11px;font-weight:700;color:var(--ink-3);text-decoration:line-through 1.5px #b3322b;-webkit-text-decoration:line-through #b3322b;margin-bottom:1px}
 .d-offer b{font-size:14px;color:#f3c9c4}
-.d-offer b s{color:#fff;opacity:.75}
+.d-offer b s{color:#fff;opacity:.8;text-decoration:line-through 2px #ff9d93;-webkit-text-decoration:line-through #ff9d93}
 .d-offer span{color:#ff9d93}
 .is-list .card-offer{font-size:9px;padding:2px 5px}
 .is-list .card-offer.below{top:18px}

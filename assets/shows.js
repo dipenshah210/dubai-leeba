@@ -439,7 +439,7 @@ function boot() {
      allowed to fetch its own data files. Hosted, it is fetched as normal. */
   (window.LEEBA_CATALOG
       ? Promise.resolve(window.LEEBA_CATALOG)
-      : fetch(CFG.CATALOG || "data/catalog.json")
+      : fetch(CFG.CATALOG || "data/catalog.json", { cache: "no-cache" })
           .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }))
     .then(function (j) {
       ALL = j.products || [];
@@ -845,8 +845,8 @@ function cardHTML(p) {
     '<div class="card-img">' +
       (im ? '<img loading="lazy" decoding="async" src="' + esc(srcFor(im)) + '" alt="' + esc(p.SKU) + '">'
           : '<span class="noimg">NO PHOTO</span>') +
-      (p.TRAY ? '<span class="card-loc loc-tray" title="' + esc(p.TRAY) + '">' + esc(p.TRAY) + '</span>' : "") +
-      (offerOf(p) ? '<span class="card-offer off-' + esc(offerOf(p)) + (p.TRAY ? " below" : "") + '">' + esc(offerOf(p)) + '</span>' : "") +
+      (p.TRAY && offerOf(p) !== "PROMO" ? '<span class="card-loc loc-tray" title="' + esc(p.TRAY) + '">' + esc(p.TRAY) + '</span>' : "") +
+      (offerOf(p) ? '<span class="card-offer off-' + esc(offerOf(p)) + (p.TRAY && offerOf(p) !== "PROMO" ? " below" : "") + '">' + esc(offerOf(p)) + '</span>' : "") +
       (st !== "AVAILABLE" ? '<span class="status st-' + esc(st.replace(/\s/g, "")) + '">' + esc(st) + '</span>' : "") +
     '</div>' +
     '<button class="card-pick" data-pick="1" title="Select">&#10003;</button>' +
