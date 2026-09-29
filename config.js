@@ -65,8 +65,10 @@ window.LEEBA_CONFIG = {
      code, which is checked on the server on every write and never appears
      anywhere in this site's files.
 
-     URL is the /exec address of the web app in tools/stock-api.gs - open
-     that file, it has the five-minute setup at the top.
+     URL is the /exec address of the web app built from stock-api.gs, the
+     file sent alongside this site. That is a new, stand-alone script on its
+     own Google Sheet - nothing to do with the one behind live.leeba.co. The
+     five-minute setup is written at the top of it.
   ---------------------------------------------------------------- */
   STOCK: {
     URL: "",

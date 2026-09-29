@@ -26,7 +26,6 @@ var STOCK_URL  = (CFG.STOCK && CFG.STOCK.URL) || "";
 var STOCK_ON   = !!STOCK_URL;
 var POLL_MS    = ((CFG.STOCK && CFG.STOCK.POLL_SECONDS) || 25) * 1000;
 var remote     = {};            // SKU -> {s, by, t} straight from the server
-var queue      = {};            // SKU -> status written here but not yet accepted
 var staff      = null;          // {code, who} once unlocked - never in the page source
 var online     = true;
 
@@ -39,6 +38,7 @@ var sel = new Set();
 var avail = {};
 var cost = null;                // decrypted internal payload, memory only
 var activeColl = -1;
+var HAS_LOC = false;             // set from the data: no location column -> no location anywhere
 
 /* Every list filter holds a SET, so several values can be on at once:
    RING + BRACELET together, D + I together, and so on. An empty set means
@@ -94,7 +94,8 @@ function costOf(p) { return cost && cost[p.SKU] ? cost[p.SKU] : null; }
    answer; then whatever the stock list was built with. */
 function availOf(p) {
   if (STOCK_ON) {
-    if (queue[p.SKU]) return queue[p.SKU];
+    var pend = pendingOf(p.SKU);
+    if (pend) return pend;
     if (remote[p.SKU] && remote[p.SKU].s) return remote[p.SKU].s;
     return p.AVAILABILITY || "AVAILABLE";
   }
@@ -133,11 +134,44 @@ function saveAvail() {
 }
 
 /* ------------------------------------------------------- live stock sync */
-function loadQueue() {
-  try { queue = JSON.parse(localStorage.getItem(KEY + "queue") || "{}"); } catch (e) { queue = {}; }
+/* Everything a staff member does goes into an ordered outbox first - a status
+   change, a sale, a cancelled sale - so the screen responds at once and nothing
+   is lost if the hall wifi drops. The outbox is sent in order. Two different
+   failures are kept apart: no connection (keep it, try again) and the server
+   saying no - "already sold by Karan", say - which is shown to the person and
+   not retried. */
+var outbox = [];                 // [{t:"status"|"sale"|"cancel", ...}]
+var refused = [];                // what the server turned down, kept until seen
+var sales = [];                  // staff only, memory only - never stored on the device
+var salesAt = 0;
+
+function loadOutbox() {
+  try { outbox = JSON.parse(localStorage.getItem(KEY + "outbox") || "[]"); } catch (e) { outbox = []; }
+  try { refused = JSON.parse(localStorage.getItem(KEY + "refused") || "[]"); } catch (e) { refused = []; }
+  // the earlier build kept a plain {sku: status} queue - carry anything in it over
+  try {
+    var old = JSON.parse(localStorage.getItem(KEY + "queue") || "{}");
+    Object.keys(old).forEach(function (k) {
+      if (old[k] !== "SOLD") outbox.push({ t: "status", sku: k, status: old[k] });
+    });
+    localStorage.removeItem(KEY + "queue");
+  } catch (e) {}
 }
-function saveQueue() {
-  try { localStorage.setItem(KEY + "queue", JSON.stringify(queue)); } catch (e) {}
+function saveOutbox() {
+  try {
+    localStorage.setItem(KEY + "outbox", JSON.stringify(outbox));
+    localStorage.setItem(KEY + "refused", JSON.stringify(refused));
+  } catch (e) {}
+}
+/* the status this device is waiting to send for a piece, if any */
+function pendingOf(sku) {
+  var st = null;
+  outbox.forEach(function (o) {
+    var k = o.t === "sale" ? o.sale.sku : o.sku;
+    if (k !== sku) return;
+    st = o.t === "sale" ? "SOLD" : o.t === "cancel" ? "AVAILABLE" : o.status;
+  });
+  return st;
 }
 function loadStaff() {
   var raw = null;
@@ -152,40 +186,50 @@ function saveStaff(keep) {
 }
 function clearStaff() {
   staff = null;
+  sales = []; salesAt = 0;
   try { localStorage.removeItem(KEY + "staff"); sessionStorage.removeItem(KEY + "staff"); } catch (e) {}
+  staffButtons();
+}
+function staffButtons() {
+  $("#staffBtn").hidden = !STOCK_ON || !!staff;
+  $("#salesBtn").hidden = !STOCK_ON || !staff;
 }
 
 function syncPill() {
   var el = $("#syncPill");
   if (!STOCK_ON) { el.hidden = true; return; }
   el.hidden = false;
-  var n = Object.keys(queue).length;
+  var n = outbox.length;
   if (!online || n) {
     el.className = "sync is-off";
     el.textContent = n ? "SAVING " + n : "OFFLINE";
   } else if (staff) {
     el.className = "sync is-live";
-    el.textContent = "LIVE · " + (staff.who || "STAFF");
+    el.textContent = "LIVE · " + (staff.who || "STAFF").split(" ")[0];
   } else {
     el.className = "sync";
     el.textContent = "LIVE";
   }
+  var b = $("#salesBtn b");
+  if (b) { b.textContent = refused.length || ""; b.hidden = !refused.length; }
 }
 
 /* Repaint only the pieces whose status actually moved, so someone else's change
    appearing does not throw away your scroll position. */
 function mergeRemote(next) {
   var changed = [];
+  next = next || {};
   ALL.forEach(function (p) {
     var was = (remote[p.SKU] && remote[p.SKU].s) || p.AVAILABILITY || "AVAILABLE";
     var now = (next[p.SKU] && next[p.SKU].s) || p.AVAILABILITY || "AVAILABLE";
     if (was !== now) changed.push(p.SKU);
   });
-  remote = next || {};
+  remote = next;
   changed.forEach(refreshCard);
   if (changed.length && filt.avail) apply();
   else if (changed.length) stats();
   if (detailSku && !$("#detail").hidden && changed.indexOf(detailSku) !== -1) openDetail(detailSku);
+  if (changed.length && !$("#salesPanel").hidden) renderSales();
   syncPill();
 }
 
@@ -196,44 +240,97 @@ function pollStock() {
     .then(function (j) {
       if (!j || !j.ok) throw new Error("bad reply");
       online = true;
-      mergeRemote(j.stock || {});
-      if (Object.keys(queue).length) flushQueue();
+      mergeRemote(j.stock);
+      if (outbox.length) return flushOutbox();
     })
+    .then(function () { if (staff) return loadSales(); })
     .catch(function () { online = false; syncPill(); });
 }
 
-/* Anything typed while the wifi was down is kept and sent on the next poll. */
-function flushQueue() {
-  var skus = Object.keys(queue);
-  if (!skus.length || !staff) return Promise.resolve();
-  var changes = skus.map(function (s) { return { sku: s, status: queue[s] }; });
-  return postStock(changes).then(function (ok) {
-    if (ok) { skus.forEach(function (s) { delete queue[s]; }); saveQueue(); syncPill(); }
-  });
-}
-
-function postStock(changes) {
-  /* plain-text body on purpose: it keeps this a "simple" request, so the
-     browser sends it straight to Apps Script instead of asking permission
-     first with an OPTIONS call, which Apps Script cannot answer */
-  return fetch(STOCK_URL, {
-    method: "POST",
-    body: JSON.stringify({ code: staff ? staff.code : "", changes: changes })
-  })
+function loadSales() {
+  if (!STOCK_ON || !staff) return Promise.resolve();
+  return fetch(STOCK_URL + "?action=sales&code=" + encodeURIComponent(staff.code) + "&t=" + Date.now())
     .then(function (r) { return r.json(); })
     .then(function (j) {
-      if (!j || !j.ok) {
-        if (j && j.error === "bad code") { clearStaff(); toast("Staff code no longer valid"); }
-        return false;
-      }
-      online = true;
-      mergeRemote(j.stock || {});
-      return true;
+      if (!j) return;
+      if (!j.ok) { if (j.error === "bad code") { clearStaff(); toast("Staff code no longer valid"); } return; }
+      sales = j.sales || []; salesAt = j.at || Date.now();
+      if (!$("#salesPanel").hidden) renderSales();
+      if (detailSku && !$("#detail").hidden) openDetail(detailSku);
     })
-    .catch(function () { online = false; syncPill(); return false; });
+    .catch(function () {});
 }
 
-/* The one way status changes anywhere in the app. */
+/* One request. Resolves {ok} | {ok:false, net:true} (no connection - keep it)
+   | {ok:false, error} (the server said no - do not retry). The body is plain
+   text on purpose: that keeps it a "simple" request, so the browser sends it
+   straight to Apps Script without an OPTIONS call Apps Script cannot answer. */
+function send(payload) {
+  payload.code = staff ? staff.code : "";
+  return fetch(STOCK_URL, { method: "POST", body: JSON.stringify(payload) })
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      online = true;
+      if (j && j.stock) mergeRemote(j.stock);
+      if (!j || !j.ok) {
+        if (j && j.error === "bad code") { clearStaff(); toast("Staff code no longer valid"); return { ok: false, net: true }; }
+        return { ok: false, error: (j && j.error) || "refused", soldBy: j && j.soldBy };
+      }
+      return { ok: true };
+    })
+    .catch(function () { online = false; syncPill(); return { ok: false, net: true }; });
+}
+
+var flushing = null;
+function flushOutbox() {
+  if (flushing) return flushing;
+  if (!outbox.length || !staff) return Promise.resolve();
+  flushing = (function next() {
+    if (!outbox.length) return Promise.resolve();
+    var o = outbox[0];
+    var payload = o.t === "sale" ? { sale: o.sale }
+                : o.t === "cancel" ? { cancel: { sku: o.sku, reason: o.reason || "" } }
+                : { changes: [{ sku: o.sku, status: o.status }] };
+    return send(payload).then(function (res) {
+      if (res.net) return;                             // still offline: stop, keep the rest
+      outbox.shift();
+      if (!res.ok) {
+        var sku = o.t === "sale" ? o.sale.sku : o.sku;
+        var what = o.t === "sale" ? "Sale of " + sku + " to " + o.sale.client
+                 : o.t === "cancel" ? "Cancelling the sale of " + sku : sku + " → " + o.status;
+        var why = res.error === "already sold" ? "already sold" + (res.soldBy ? " by " + res.soldBy : "") : res.error;
+        refused.push({ what: what, why: why, at: Date.now() });
+        toast(what + " NOT saved: " + why);
+        refreshCard(sku);
+      } else {
+        var k = o.t === "sale" ? o.sale.sku : o.sku;
+        toast(o.t === "sale" ? k + " sold to " + o.sale.client
+            : o.t === "cancel" ? "Sale of " + k + " cancelled" : k + " - " + o.status);
+      }
+      saveOutbox(); syncPill();
+      return next();
+    });
+  })().then(function () {
+    flushing = null;
+    saveOutbox(); syncPill();
+    if (detailSku && !$("#detail").hidden) openDetail(detailSku);
+    return loadSales();
+  });
+  return flushing;
+}
+
+function queueOp(op) {
+  outbox.push(op); saveOutbox();
+  var sku = op.t === "sale" ? op.sale.sku : op.sku;
+  refreshCard(sku);
+  if (filt.avail) apply(); else stats();
+  syncPill();
+  if (!$("#salesPanel").hidden) renderSales();
+  flushOutbox();
+}
+
+/* Plain status changes: AVAILABLE / HOLD / MEMO OUT. SOLD never comes through
+   here with a backend - it is always a sale. */
 function setStatus(sku, status) {
   if (!STOCK_ON) {                       // no backend configured: this device only
     avail[sku] = status; saveAvail();
@@ -243,22 +340,32 @@ function setStatus(sku, status) {
     return;
   }
   if (!staff) { openStaff(); return; }
+  queueOp({ t: "status", sku: sku, status: status });
+}
 
-  queue[sku] = status; saveQueue();      // show it immediately
-  refreshCard(sku);
-  if (filt.avail) apply(); else stats();
-  syncPill();
-
-  postStock([{ sku: sku, status: status }]).then(function (ok) {
-    if (ok) {
-      delete queue[sku]; saveQueue();
-      toast(sku + " - " + status);
-    } else {
-      toast("Saved here - will sync when back online");
-    }
-    syncPill();
-    if (detailSku === sku && !$("#detail").hidden) openDetail(sku);
-  });
+/* the live sale behind a SOLD piece, if this device knows it */
+function saleOf(sku) {
+  for (var i = outbox.length - 1; i >= 0; i--) {
+    if (outbox[i].t === "sale" && outbox[i].sale.sku === sku) return Object.assign({ pending: true }, outbox[i].sale);
+  }
+  for (var j = sales.length - 1; j >= 0; j--) {
+    if (sales[j].sku === sku && sales[j].status === "ACTIVE") return sales[j];
+  }
+  return null;
+}
+function dubaiToday() {
+  try { return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dubai" }); }
+  catch (e) { return new Date().toISOString().slice(0, 10); }
+}
+function prettyDay(d) {
+  if (!d) return "";
+  var t = new Date(d + "T12:00:00Z");
+  return t.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+}
+function curMoney(n, cur) {
+  if (n === null || n === undefined || isNaN(n)) return "";
+  var v = Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
+  return cur === "AED" ? "AED " + v : "$" + v;
 }
 
 var toastT;
@@ -272,9 +379,9 @@ function toast(msg) {
 /* ============================================================== BOOT */
 function boot() {
   loadAvail();
-  loadQueue();
+  loadOutbox();
   loadStaff();
-  $("#staffBtn").hidden = !STOCK_ON;
+  staffButtons();
   syncPill();
 
   var logo = $("#logo");
@@ -387,6 +494,12 @@ function items(map, sorter) {
 function buildFilters() {
   var cats     = tally(function (p) { return p.CATEGORY; });
   var locs     = tally(function (p) { return p.LOC; });
+  // Every piece at one place (the Sharjah show) - or no location column at all -
+  // means there is nothing to filter on, so the chips, the filter section, the
+  // card badge and the export column all go.
+  HAS_LOC = Object.keys(locs).length > 1;
+  $("#locChips").hidden = !HAS_LOC;
+  $("#fLoc").closest(".f").hidden = !HAS_LOC;
   var tones    = tally(function (p) { return p.METAL_COLOR; });
   var purities = tally(function (p) { return p.METAL_KT; });
   var shapes   = tally(shapesOf);
@@ -653,7 +766,7 @@ function cardHTML(p) {
     '<div class="card-img">' +
       (im ? '<img loading="lazy" decoding="async" src="' + esc(srcFor(im)) + '" alt="' + esc(p.SKU) + '">'
           : '<span class="noimg">NO PHOTO</span>') +
-      '<span class="card-loc loc-' + esc(p.LOC) + '">' + esc(p.LOC) + '</span>' +
+      (HAS_LOC && p.LOC ? '<span class="card-loc loc-' + esc(p.LOC) + '">' + esc(p.LOC) + '</span>' : "") +
       (st !== "AVAILABLE" ? '<span class="status st-' + esc(st.replace(/\s/g, "")) + '">' + esc(st) + '</span>' : "") +
     '</div>' +
     '<button class="card-pick" data-pick="1" title="Select">&#10003;</button>' +
@@ -674,7 +787,7 @@ function cardHTML(p) {
         specCell("TONE", p.METAL_COLOR || "") +
       '</div>' +
       '<div class="card-price">' +
-        '<span class="amt">' + (sv !== null ? money(sv) : "&mdash;") + '</span>' +
+        '<span class="amt">' + (sv ? money(sv) : '<em class="por">PRICE ON REQUEST</em>') + '</span>' +
         (p.SELL_PER_CT_USD ? '<span class="perct">' + money(p.SELL_PER_CT_USD) + '/CT</span>' : "") +
       '</div>' +
       (c ? '<div class="card-cost">COST ' + money(c.cost) +
@@ -712,8 +825,9 @@ function openDetail(sku) {
 
   $("#dSku").textContent = p.SKU;
   var loc = $("#dLoc");
-  loc.textContent = p.LOC;
-  loc.className = "badge loc-" + p.LOC;
+  loc.hidden = !(HAS_LOC && p.LOC);
+  loc.textContent = p.LOC || "";
+  loc.className = "badge loc-" + (p.LOC || "");
   $("#dCat").textContent = p.CATEGORY || "";
   $("#dDesc").textContent = p.DESCRIPTION || "";
 
@@ -727,7 +841,7 @@ function openDetail(sku) {
   // price band - selling price always, cost only when the internal view is open
   var c = costOf(p), band = [];
   band.push('<div class="big"><span>SELLING PRICE</span><b>' +
-            (sellOf(p) !== null ? money(sellOf(p)) : "&mdash;") + '</b></div>');
+            (sellOf(p) ? money(sellOf(p)) : "ON REQUEST") + '</b></div>');
   if (p.SELL_PER_CT_USD) band.push('<div><span>PER CARAT</span><b>' + money(p.SELL_PER_CT_USD) + '</b></div>');
   if (c) {
     band.push('<div><span>COST</span><b>' + money(c.cost) + '</b></div>');
@@ -735,6 +849,11 @@ function openDetail(sku) {
     if (c.dia) band.push('<div><span>DIAMOND</span><b>' + money(c.dia) + '</b></div>');
     if (c.gold) band.push('<div><span>GOLD' + (c.making ? "" : " + MAKING") + '</span><b>' + money(c.gold) + '</b></div>');
     if (c.making) band.push('<div><span>MAKING</span><b>' + money(c.making) + '</b></div>');
+    // what the piece really cost to buy, from the stock sheet - Dubai pieces only
+    if (c.real_aed) band.push('<div><span>BOUGHT AT</span><b>AED ' +
+      Number(c.real_aed).toLocaleString("en-US", { maximumFractionDigits: 0 }) + '</b></div>');
+    if (c.made || c.maker) band.push('<div><span>MADE</span><b>' +
+      esc([c.made, c.maker].filter(Boolean).join(" \u00b7 ")) + '</b></div>');
   }
   var pb = $("#dPrice");
   pb.innerHTML = band.join("");
@@ -799,7 +918,18 @@ function openDetail(sku) {
   });
   $("#dAvail").classList.toggle("is-locked", locked);
   $("#dStamp").textContent = locked ? "— unlock to change"
-                                    : (STOCK_ON ? stampOf(sku) : "this device only");
+                                    : (STOCK_ON ? (pendingOf(sku) ? "saving…" : stampOf(sku)) : "this device only");
+  // the sale behind a SOLD piece - client, price, payment, seller. Only a staff
+  // device ever has this; a customer's page never fetches sales at all.
+  var sl = (!locked && STOCK_ON && cur === "SOLD") ? saleOf(sku) : null;
+  var box = $("#dSale");
+  box.hidden = !sl;
+  if (sl) {
+    box.innerHTML = "<b>SOLD TO " + esc(sl.client) + "</b> &middot; " + esc(curMoney(sl.price, sl.currency)) +
+      " &middot; " + esc(sl.payment) + (sl.pending ? " &middot; <i>saving…</i>"
+        : " &middot; " + esc(sl.by) + " &middot; " + esc(prettyDay(sl.date)) + " " + esc(sl.time)) +
+      (sl.remark ? "<br><span>" + esc(sl.remark) + "</span>" : "");
+  }
   $("#dPick").textContent = sel.has(sku) ? "REMOVE FROM SELECTION" : "ADD TO SELECTION";
 
   var i = VIEW.findIndex(function (x) { return x.SKU === sku; });
@@ -868,10 +998,11 @@ function exportRows(picked, label) {
   var wb = new ExcelJS.Workbook();
   wb.creator = "LEEBA Jewels";
 
-  var head = ["SR", "SKU", "LOCATION", "CATEGORY", "DESCRIPTION", "PURITY", "TONE", "SIZE",
+  var head = ["SR", "SKU", "CATEGORY", "DESCRIPTION", "PURITY", "TONE", "SIZE",
               "GROSS WT (gm)", "NET GOLD (gm)", "CENTRE CT", "SIDE CT", "TOTAL CT", "PCS",
               "CENTRE STONE", "QUALITY", "SHAPES", "CERT", "AVAILABILITY",
               "SELLING PRICE (USD)", "PER CARAT (USD)"];
+  if (HAS_LOC) head.splice(2, 0, "LOCATION");
   if (cost) head = head.concat(["COST (USD)", "MARKUP"]);
 
   var s1 = wb.addWorksheet("COLLECTION");
@@ -880,7 +1011,7 @@ function exportRows(picked, label) {
   s1.addRow([]);
   s1.addRow(head);
   picked.forEach(function (p, i) {
-    var row = [i + 1, p.SKU, p.LOC, p.CATEGORY, p.DESCRIPTION || "",
+    var row = [i + 1, p.SKU, p.CATEGORY, p.DESCRIPTION || "",
       p.METAL_KT ? p.METAL_KT + "K" : "", p.METAL_COLOR || "", p.SIZE || "",
       p.GROSS_WT_GM || "", p.NET_GOLD_WT_GM || "", p.CENTER_CT || "", p.SIDE_CT || "",
       p.TOTAL_CT || "", pcsOf(p) || "",
@@ -888,6 +1019,7 @@ function exportRows(picked, label) {
         .filter(Boolean).join(" ") : "",
       p.QUALITY || "", p.SHAPES || "", p.CENTER_CERT || p.CERT || "", availOf(p),
       sellOf(p) || "", p.SELL_PER_CT_USD || ""];
+    if (HAS_LOC) row.splice(2, 0, p.LOC || "");
     if (cost) {
       var c = cost[p.SKU] || {};
       row = row.concat([c.cost || "", c.markup || ""]);
@@ -934,16 +1066,18 @@ function exportRows(picked, label) {
 }
 
 function exportCsv(picked) {
-  var head = ["SR", "SKU", "LOCATION", "CATEGORY", "DESCRIPTION", "PURITY", "TONE",
+  var head = ["SR", "SKU", "CATEGORY", "DESCRIPTION", "PURITY", "TONE",
               "GROSS WT", "NET GOLD", "TOTAL CT", "PCS", "QUALITY", "CERT",
               "AVAILABILITY", "SELLING PRICE"];
+  if (HAS_LOC) head.splice(2, 0, "LOCATION");
   if (cost) head.push("COST", "MARKUP");
   var lines = [head.join(",")];
   picked.forEach(function (p, i) {
-    var r = [i + 1, p.SKU, p.LOC, p.CATEGORY, p.DESCRIPTION || "",
+    var r = [i + 1, p.SKU, p.CATEGORY, p.DESCRIPTION || "",
              p.METAL_KT ? p.METAL_KT + "K" : "", p.METAL_COLOR || "", p.GROSS_WT_GM || "",
              p.NET_GOLD_WT_GM || "", p.TOTAL_CT || "", pcsOf(p) || "", p.QUALITY || "",
              p.CENTER_CERT || p.CERT || "", availOf(p), sellOf(p) || ""];
+    if (HAS_LOC) r.splice(2, 0, p.LOC || "");
     if (cost) { var c = cost[p.SKU] || {}; r.push(c.cost || "", c.markup || ""); }
     lines.push(r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(","));
   });
@@ -958,6 +1092,279 @@ function download(blob, name) {
   a.download = name;
   document.body.appendChild(a); a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+/* ------------------------------------------------------------ sale form */
+var AED_PER_USD = (CFG.STOCK && CFG.STOCK.AED_PER_USD) || 3.6725;   // the dirham's fixed peg
+var saleSku = null, saleCur = "USD", salePay = "", priceTouched = false;
+
+function openSale(sku) {
+  if (!staff) { openStaff(); return; }
+  var p = ALL.find(function (x) { return x.SKU === sku; });
+  if (!p) return;
+  saleSku = sku; saleCur = "USD"; salePay = ""; priceTouched = false;
+  var list = sellOf(p);
+  $("#saleSku").textContent = sku;
+  $("#saleDesc").textContent = [p.CATEGORY, p.DESCRIPTION].filter(Boolean).join(" · ");
+  $("#saleList").textContent = list ? "List " + money(list) + "  ≈  AED " +
+    Math.round(list * AED_PER_USD).toLocaleString("en-US") : "";
+  $("#saleClient").value = "";
+  $("#salePrice").value = list ? Math.round(list) : "";
+  $("#saleRemark").value = "";
+  $$("#saleCur .chip").forEach(function (c) { c.classList.toggle("is-on", c.dataset.cur === "USD"); });
+  $$("#salePay .chip").forEach(function (c) { c.classList.remove("is-on"); });
+  $("#saleWho").textContent = "Recorded as " + staff.who + " · " + prettyDay(dubaiToday()) + ", Dubai time";
+  $("#saleErr").hidden = true;
+  saleReady();
+  $("#sale").hidden = false;
+  setTimeout(function () { $("#saleClient").focus(); }, 40);
+}
+function saleReady() {
+  var ok = $("#saleClient").value.trim() && Number($("#salePrice").value) > 0 && salePay;
+  $("#saleGo").disabled = !ok;
+  return ok;
+}
+function submitSale() {
+  if (!saleReady() || !saleSku) return;
+  var p = ALL.find(function (x) { return x.SKU === saleSku; });
+  var sale = {
+    sku: saleSku,
+    client: $("#saleClient").value.trim(),
+    price: Math.round(Number($("#salePrice").value) * 100) / 100,
+    currency: saleCur,
+    payment: salePay,
+    remark: $("#saleRemark").value.trim(),
+    category: p ? p.CATEGORY : "",
+    description: p ? (p.DESCRIPTION || "") : "",
+    list: p ? sellOf(p) : null,
+    date: dubaiToday(),
+    time: new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Dubai" }),
+    by: staff.who
+  };
+  $("#sale").hidden = true;
+  queueOp({ t: "sale", sale: sale });
+  if (detailSku === saleSku && !$("#detail").hidden) openDetail(saleSku);
+}
+
+/* ------------------------------------------------------------ sales view */
+var salesDay = null;               // "YYYY-MM-DD", or "" for every day
+
+function openSalesPanel() {
+  if (!staff) { openStaff(); return; }
+  if (salesDay === null) salesDay = dubaiToday();
+  renderSales();
+  $("#salesPanel").hidden = false;
+  loadSales();
+}
+
+/* what this device knows: the server's sales plus anything still waiting to send */
+function allSales() {
+  var out = sales.slice();
+  outbox.forEach(function (o) {
+    if (o.t === "sale") out.push(Object.assign({ status: "ACTIVE", pending: true, id: "" }, o.sale));
+  });
+  return out;
+}
+
+function tallyOf(list) {
+  var t = { n: 0, usd: 0, aed: 0, pay: {}, by: {} };
+  list.forEach(function (x) {
+    t.n++;
+    if (x.currency === "AED") t.aed += x.price; else t.usd += x.price;
+    [["pay", x.payment || "?"], ["by", x.by || "?"]].forEach(function (k) {
+      var m = t[k[0]], key = k[1];
+      m[key] = m[key] || { n: 0, usd: 0, aed: 0 };
+      m[key].n++;
+      if (x.currency === "AED") m[key].aed += x.price; else m[key].usd += x.price;
+    });
+  });
+  return t;
+}
+function amounts(o) {
+  var bits = [];
+  if (o.usd) bits.push(curMoney(o.usd, "USD"));
+  if (o.aed) bits.push(curMoney(o.aed, "AED"));
+  return bits.join(" + ") || "—";
+}
+
+function stockCounts() {
+  var c = { total: ALL.length, AVAILABLE: 0, HOLD: 0, "MEMO OUT": 0, SOLD: 0, value: 0 };
+  ALL.forEach(function (p) {
+    var st = availOf(p);
+    c[st] = (c[st] || 0) + 1;
+    if (st === "AVAILABLE") c.value += sellOf(p) || 0;
+  });
+  return c;
+}
+
+function renderSales() {
+  var every = allSales();
+  var live = every.filter(function (x) { return x.status !== "CANCELLED"; });
+  var days = {};
+  live.forEach(function (x) { if (x.date) days[x.date] = (days[x.date] || 0) + 1; });
+  var today = dubaiToday();
+  if (!days[today]) days[today] = 0;
+
+  $("#spDays").innerHTML = Object.keys(days).sort().reverse().map(function (d) {
+    return '<button class="chip' + (d === salesDay ? " is-on" : "") + '" data-day="' + d + '">' +
+      (d === today ? "TODAY" : prettyDay(d).toUpperCase()) + " <b>" + days[d] + "</b></button>";
+  }).join("") + '<button class="chip' + (salesDay === "" ? " is-on" : "") + '" data-day="">ALL DAYS <b>' +
+    live.length + "</b></button>";
+
+  var inDay = function (x) { return salesDay === "" || x.date === salesDay; };
+  var dayLive = live.filter(inDay);
+  var dayCancelled = every.filter(function (x) { return x.status === "CANCELLED" && inDay(x); });
+  var t = tallyOf(dayLive);
+  var sc = stockCounts();
+
+  var head = salesDay === "" ? "ALL DAYS" : (salesDay === today ? "TODAY" : prettyDay(salesDay).toUpperCase());
+  $("#spTiles").innerHTML =
+    tile("PIECES SOLD · " + head, t.n) +
+    tile("TAKEN", amounts(t)) +
+    tile("AVAILABLE NOW", sc.AVAILABLE + " <small>of " + sc.total + "</small>") +
+    tile("SOLD · HOLD · MEMO", sc.SOLD + " · " + sc.HOLD + " · " + sc["MEMO OUT"]);
+
+  $("#spBreak").innerHTML =
+    breakdown("BY PAYMENT", ["CASH", "CARD", "BANK"].filter(function (k) { return t.pay[k]; })
+      .map(function (k) { return [k, t.pay[k]]; })) +
+    breakdown("BY PERSON", Object.keys(t.by).sort().map(function (k) { return [k, t.by[k]]; }));
+
+  var ref = $("#spRefused");
+  ref.hidden = !refused.length;
+  ref.innerHTML = refused.length ? "<b>NOT SAVED — check these</b>" + refused.map(function (r) {
+    return "<div>" + esc(r.what) + " — <i>" + esc(r.why) + "</i></div>";
+  }).join("") + '<button class="btn btn-ghost" id="spRefusedOk">OK, SEEN</button>' : "";
+
+  var rows = dayLive.slice().sort(function (a, b) {
+    return (b.date + b.time).localeCompare(a.date + a.time);
+  });
+  $("#spTable").innerHTML = rows.length ?
+    "<tr><th>" + (salesDay === "" ? "DATE" : "TIME") + "</th><th>PIECE</th><th>CLIENT</th><th>PRICE</th>" +
+    "<th>PAID</th><th>BY</th><th>REMARK</th><th></th></tr>" +
+    rows.map(function (x) {
+      return "<tr" + (x.pending ? ' class="is-pending"' : "") + "><td>" +
+        esc(salesDay === "" ? prettyDay(x.date) + " " + x.time : x.time) + "</td><td><b>" + esc(x.sku) +
+        "</b><br><span>" + esc([x.category, x.description].filter(Boolean).join(" · ")) + "</span></td><td>" +
+        esc(x.client) + "</td><td class='num'>" + esc(curMoney(x.price, x.currency)) +
+        (x.list && x.currency !== "AED" && Math.round(x.list) !== Math.round(x.price)
+          ? "<br><span>list " + esc(money(x.list)) + "</span>" : "") +
+        "</td><td>" + esc(x.payment) + "</td><td>" + esc(x.pending ? "saving…" : x.by) + "</td><td>" +
+        esc(x.remark || "") + "</td><td>" +
+        (x.pending ? "" : '<button class="sp-x" data-cancel="' + esc(x.sku) + '" title="Cancel this sale">CANCEL</button>') +
+        "</td></tr>";
+    }).join("")
+    : '<tr><td class="none">No sales ' + (salesDay === today ? "yet today" : "on this day") + ".</td></tr>";
+
+  $("#spCancelled").innerHTML = dayCancelled.length ?
+    "<b>CANCELLED</b>" + dayCancelled.map(function (x) {
+      return "<div>" + esc(x.sku) + " — " + esc(x.client) + ", " + esc(curMoney(x.price, x.currency)) +
+        " — sold by " + esc(x.by) + ", cancelled by " + esc(x.cancelledBy) +
+        (x.cancelledAt ? " " + esc(x.cancelledAt.slice(11)) : "") + "</div>";
+    }).join("") : "";
+
+  $("#spWho").textContent = staff ? "Signed in as " + staff.who : "";
+  $("#spExport").textContent = salesDay === "" ? "EXPORT ALL DAYS" :
+    (salesDay === today ? "EXPORT TODAY" : "EXPORT " + prettyDay(salesDay).toUpperCase());
+  $("#spFresh").textContent = salesAt ? "updated " + new Date(salesAt).toLocaleTimeString("en-GB",
+    { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Dubai" }) + " Dubai" : "";
+}
+function tile(label, val) {
+  return '<div class="sp-tile"><span>' + label + "</span><b>" + val + "</b></div>";
+}
+function breakdown(title, rows) {
+  if (!rows.length) return "";
+  return '<div class="sp-break"><span>' + title + "</span>" + rows.map(function (r) {
+    return "<div><b>" + esc(r[0]) + "</b><em>" + r[1].n + " pc" + (r[1].n === 1 ? "" : "s") +
+      "</em><i>" + esc(amounts(r[1])) + "</i></div>";
+  }).join("") + "</div>";
+}
+
+/* Evening tally: the day's sales, the totals, and where every piece stands. */
+function exportSales() {
+  var every = allSales();
+  var inDay = function (x) { return salesDay === "" || x.date === salesDay; };
+  var live = every.filter(function (x) { return x.status !== "CANCELLED" && inDay(x); });
+  var cancelled = every.filter(function (x) { return x.status === "CANCELLED" && inDay(x); });
+  var label = salesDay === "" ? "all-days" : salesDay;
+  if (typeof ExcelJS === "undefined") { toast("Excel export needs a connection"); return; }
+
+  var wb = new ExcelJS.Workbook(); wb.creator = "LEEBA Jewels";
+  var hdr = function (ws, r) {
+    ws.getRow(r).eachCell(function (c) {
+      c.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10, name: "Arial" };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F4040" } };
+    });
+    ws.views = [{ state: "frozen", ySplit: r }];
+  };
+  var widths = function (ws) {
+    ws.columns.forEach(function (col) {
+      var w = 9;
+      col.eachCell({ includeEmpty: false }, function (c) {
+        w = Math.max(w, Math.min(40, String(c.value === null || c.value === undefined ? "" : c.value).length + 2));
+      });
+      col.width = w; col.font = { name: "Arial", size: 10 };
+    });
+  };
+
+  var t = tallyOf(live), sc = stockCounts();
+  var s0 = wb.addWorksheet("SUMMARY");
+  s0.addRow([SHOW_NAME]);
+  s0.addRow(["Sales " + (salesDay === "" ? "- all days" : "- " + prettyDay(salesDay) + " (" + salesDay + ")") +
+             " - exported " + new Date().toLocaleString("en-GB") + " by " + (staff ? staff.who : "")]);
+  s0.addRow([]);
+  s0.addRow(["", "PIECES", "USD", "AED"]); hdr(s0, 4);
+  s0.addRow(["SOLD", t.n, t.usd, t.aed]);
+  ["CASH", "CARD", "BANK"].forEach(function (k) {
+    var v = t.pay[k] || { n: 0, usd: 0, aed: 0 }; s0.addRow(["  " + k, v.n, v.usd, v.aed]);
+  });
+  s0.addRow([]);
+  s0.addRow(["BY PERSON", "PIECES", "USD", "AED"]); hdr(s0, s0.rowCount);
+  Object.keys(t.by).sort().forEach(function (k) { var v = t.by[k]; s0.addRow([k, v.n, v.usd, v.aed]); });
+  s0.addRow([]);
+  s0.addRow(["STOCK NOW", "PIECES", "", ""]); hdr(s0, s0.rowCount);
+  [["AVAILABLE", sc.AVAILABLE], ["HOLD", sc.HOLD], ["MEMO OUT", sc["MEMO OUT"]], ["SOLD", sc.SOLD],
+   ["TOTAL", sc.total]].forEach(function (r) { s0.addRow(r); });
+  s0.addRow(["Available stock at list price (USD)", "", sc.value, ""]);
+  s0.views = [];
+  s0.getCell("A1").font = { bold: true, size: 13, name: "Arial", color: { argb: "FF0F4040" } };
+  widths(s0);
+
+  var s1 = wb.addWorksheet("SALES");
+  s1.addRow(["DATE", "TIME", "SKU", "CATEGORY", "DESCRIPTION", "CLIENT", "PRICE", "CURRENCY",
+             "PAYMENT", "REMARK", "SOLD BY", "LIST PRICE (USD)", "SALE ID"]); hdr(s1, 1);
+  live.slice().sort(function (a, b) { return (a.date + a.time).localeCompare(b.date + b.time); })
+    .forEach(function (x) {
+      s1.addRow([x.date, x.time, x.sku, x.category, x.description, x.client, x.price, x.currency,
+                 x.payment, x.remark, x.pending ? "(not yet saved)" : x.by, x.list || "", x.id || ""]);
+    });
+  widths(s1);
+
+  if (cancelled.length) {
+    var s2 = wb.addWorksheet("CANCELLED");
+    s2.addRow(["DATE", "TIME", "SKU", "CLIENT", "PRICE", "CURRENCY", "PAYMENT", "SOLD BY",
+               "CANCELLED BY", "CANCELLED AT", "SALE ID"]); hdr(s2, 1);
+    cancelled.forEach(function (x) {
+      s2.addRow([x.date, x.time, x.sku, x.client, x.price, x.currency, x.payment, x.by,
+                 x.cancelledBy, x.cancelledAt, x.id]);
+    });
+    widths(s2);
+  }
+
+  var s3 = wb.addWorksheet("STOCK");
+  s3.addRow(["SKU", "CATEGORY", "DESCRIPTION", "STATUS", "LIST PRICE (USD)", "SOLD TO", "SOLD FOR", "SOLD BY"]);
+  hdr(s3, 1);
+  ALL.slice().sort(function (a, b) { return a.SKU.localeCompare(b.SKU); }).forEach(function (p) {
+    var st = availOf(p), sl = st === "SOLD" ? saleOf(p.SKU) : null;
+    s3.addRow([p.SKU, p.CATEGORY, p.DESCRIPTION || "", st, sellOf(p) || "",
+               sl ? sl.client : "", sl ? curMoney(sl.price, sl.currency) : "", sl ? (sl.by || "") : ""]);
+  });
+  widths(s3);
+
+  wb.xlsx.writeBuffer().then(function (buf) {
+    download(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+             "LEEBA-" + TAG + "-SALES-" + label + ".xlsx");
+    toast("Sales exported");
+  });
 }
 
 /* ------------------------------------------------------------ wiring */
@@ -1088,10 +1495,28 @@ function wire() {
   $("#dAvail").addEventListener("click", function (e) {
     var b = e.target.closest(".chip"); if (!b || !detailSku) return;
     if (!canEdit()) { openStaff(); return; }
-    $$("#dAvail .chip").forEach(function (x) { x.classList.remove("is-on"); });
-    b.classList.add("is-on");
-    setStatus(detailSku, b.dataset.set);
-    $("#dStamp").textContent = STOCK_ON ? "saving…" : "this device only";
+    var sku = detailSku, want = b.dataset.set;
+    var p = ALL.find(function (x) { return x.SKU === sku; });
+    var now = availOf(p);
+    if (want === now) return;
+    if (!STOCK_ON) {                                   // device-only mode, no sales
+      setStatus(sku, want); openDetail(sku); return;
+    }
+    if (want === "SOLD") { openSale(sku); return; }    // selling = recording a sale
+    if (now === "SOLD") {                              // un-selling = cancelling it
+      var sl = saleOf(sku);
+      var msg = "Cancel the sale of " + sku +
+        (sl ? " to " + sl.client + " (" + curMoney(sl.price, sl.currency) + ")" : "") +
+        "?\n\nThe sale stays in the record, marked cancelled, and the piece becomes " +
+        want + ".";
+      if (!window.confirm(msg)) return;
+      queueOp({ t: "cancel", sku: sku, reason: "changed to " + want });
+      if (want !== "AVAILABLE") queueOp({ t: "status", sku: sku, status: want });
+      openDetail(sku);
+      return;
+    }
+    setStatus(sku, want);
+    openDetail(sku);
   });
   $("#dPick").addEventListener("click", function () {
     if (!detailSku) return;
@@ -1105,6 +1530,46 @@ function wire() {
   // stock control. Unlike the cost view this one IS meant to be reachable from a
   // phone - marking a piece sold happens at the stand, not at a desk.
   $("#staffBtn").addEventListener("click", openStaff);
+  $("#syncPill").addEventListener("click", function () { if (STOCK_ON) (staff ? openSalesPanel : openStaff)(); });
+  $("#salesBtn").addEventListener("click", openSalesPanel);
+
+  // sale form
+  $("#saleClient").addEventListener("input", saleReady);
+  $("#salePrice").addEventListener("input", function () { priceTouched = true; saleReady(); });
+  $("#salePay").addEventListener("click", function (e) {
+    var c = e.target.closest(".chip"); if (!c) return;
+    salePay = c.dataset.pay;
+    $$("#salePay .chip").forEach(function (x) { x.classList.toggle("is-on", x === c); });
+    saleReady();
+  });
+  $("#saleCur").addEventListener("click", function (e) {
+    var c = e.target.closest(".chip"); if (!c || c.dataset.cur === saleCur) return;
+    var p = ALL.find(function (x) { return x.SKU === saleSku; });
+    var list = p ? sellOf(p) : null;
+    saleCur = c.dataset.cur;
+    $$("#saleCur .chip").forEach(function (x) { x.classList.toggle("is-on", x === c); });
+    // an untouched price follows the currency; a typed one is left alone
+    if (!priceTouched && list) $("#salePrice").value = Math.round(saleCur === "AED" ? list * AED_PER_USD : list);
+    saleReady();
+  });
+  $("#saleForm").addEventListener("submit", function (e) { e.preventDefault(); submitSale(); });
+
+  // sales view
+  $("#spDays").addEventListener("click", function (e) {
+    var c = e.target.closest(".chip"); if (!c) return;
+    salesDay = c.dataset.day; renderSales();
+  });
+  $("#spExport").addEventListener("click", exportSales);
+  $("#spLock").addEventListener("click", function () { $("#staffOut").click(); });
+  $("#salesPanel").addEventListener("click", function (e) {
+    if (e.target.id === "spRefusedOk") { refused = []; saveOutbox(); syncPill(); renderSales(); return; }
+    var x = e.target.closest("[data-cancel]"); if (!x) return;
+    var sku = x.dataset.cancel, sl = saleOf(sku);
+    if (!window.confirm("Cancel the sale of " + sku + (sl ? " to " + sl.client + " (" +
+        curMoney(sl.price, sl.currency) + ")" : "") + "?\n\nIt stays in the record, marked cancelled, " +
+        "and the piece goes back to AVAILABLE.")) return;
+    queueOp({ t: "cancel", sku: sku, reason: "cancelled from sales list" });
+  });
   if (location.hash === "#staff") openStaff();
   window.addEventListener("hashchange", function () { if (location.hash === "#staff") openStaff(); });
 
@@ -1120,10 +1585,11 @@ function wire() {
         saveStaff($("#staffKeep").checked);
         $("#staff").hidden = true;
         $("#staffCode").value = "";
-        syncPill();
-        toast("Stock control open - " + j.who);
+        staffButtons(); syncPill();
+        toast("Unlocked - " + j.who);
         if (detailSku && !$("#detail").hidden) openDetail(detailSku);
-        flushQueue();
+        flushOutbox();
+        loadSales();
       })
       .catch(function () { $("#sErr").hidden = false; })
       .then(function () { btn.disabled = false; btn.textContent = "UNLOCK STOCK CONTROL"; });
@@ -1132,6 +1598,7 @@ function wire() {
   $("#staffOut").addEventListener("click", function () {
     clearStaff();
     $("#staff").hidden = true;
+    $("#salesPanel").hidden = true;
     syncPill();
     if (detailSku && !$("#detail").hidden) openDetail(detailSku);
     toast("Stock control locked");

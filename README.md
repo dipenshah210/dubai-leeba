@@ -98,10 +98,15 @@ Switch this on and stock goes live: mark a piece SOLD at the stand and every oth
 phone, tablet and laptop showing the page catches up within about 25 seconds —
 customers included.
 
-**Setup, about five minutes.** Open `tools/stock-api.gs`; the steps are at the top of
-that file. In short: make a Google Sheet, paste the script into Extensions → Apps
-Script, put your own staff codes in, deploy it as a web app (*Execute as: Me*, *Who has
-access: Anyone*), and paste the `/exec` URL it gives you into `config.js`:
+This is a **new, stand-alone** script — a new Sheet, its own script project, its own web
+app URL. It has nothing to do with the Apps Script behind live.leeba.co: that one is not
+touched, imported or changed, and deleting this one later would leave it untouched.
+
+**Setup, about five minutes.** Use `stock-api.gs`, sent alongside this zip — it is not
+in the site folder, because it never gets uploaded anywhere. The steps are written at
+the top of that file. In short: make a new Google Sheet, Extensions → Apps Script, paste
+the script in, put your own staff codes in, deploy it as a web app (*Execute as: Me*,
+*Who has access: Anyone*), and paste the `/exec` URL it gives you into `config.js`:
 
 ```js
 STOCK: {

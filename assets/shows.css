@@ -85,7 +85,7 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
 .chip.is-on b{opacity:.7}
 .hdr .chip{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.85)}
 .hdr .chip.is-on{background:var(--teal);border-color:var(--teal);color:var(--teal-ink)}
-.stats{font-size:11px;font-weight:800;letter-spacing:.07em;color:rgba(255,255,255,.66);font-variant-numeric:tabular-nums}
+.stats{margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.07em;color:rgba(255,255,255,.66);font-variant-numeric:tabular-nums}
 .stats b{color:#fff}
 .stats .gold{color:var(--gold)}
 
@@ -444,6 +444,85 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
   .detail-img>img{max-height:34vh}
 }
 
+
+/* ---------------------------------------------------------------- sales */
+.btn-sales{display:flex;align-items:center;gap:6px}
+.btn-sales b{background:var(--stop);color:#fff;padding:1px 6px;font-size:10px}
+.sync{cursor:pointer}
+
+/* the sale behind a sold piece - only ever on a signed-in device */
+.d-sale{
+  width:100%;background:#f6f1e6;border-left:3px solid var(--gold);padding:8px 10px;
+  font-size:12px;font-weight:600;color:var(--ink-2);line-height:1.5;
+}
+.d-sale b{color:var(--ink);letter-spacing:.03em}
+.d-sale span{color:var(--ink-3)}
+.d-sale i{color:var(--warn);font-style:normal;font-weight:800}
+
+.sale-card{max-width:440px;padding:24px 22px 20px;overflow-y:auto}
+.sale-desc{font-size:12px;font-weight:600;color:var(--ink-2);margin:0 0 16px}
+.sf{display:block;font-size:9.5px;font-weight:800;letter-spacing:.13em;color:var(--ink-3);margin-bottom:14px}
+.sf em{font-style:normal;font-weight:600;letter-spacing:.02em;text-transform:none;opacity:.8}
+.sf input{
+  display:block;width:100%;margin-top:6px;padding:11px 12px;border:1px solid var(--line);
+  font-size:15px;font-weight:700;color:var(--ink);outline:none;letter-spacing:0;
+}
+.sf input:focus{border-color:var(--teal)}
+.sf small{display:block;margin-top:5px;font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--ink-3)}
+.sale-price{display:flex;gap:8px;align-items:stretch;margin-top:6px}
+.sale-price .chips{flex:0 0 auto}
+.sale-price input{margin-top:0;flex:1 1 auto;min-width:0;font-variant-numeric:tabular-nums;font-size:17px}
+.sale-pay{margin-top:6px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.sale-pay .chip{padding:12px 6px;font-size:12px;text-align:center}
+.sale-card .chip.is-on{background:var(--teal-x);border-color:var(--teal-x);color:#fff}
+.sale-who{font-size:11px;font-weight:600;color:var(--ink-3);margin:4px 0 0}
+#saleGo:disabled{opacity:.45;cursor:default;filter:none}
+
+.sales-card{max-width:980px}
+.sp-who{font-size:11px;font-weight:700;letter-spacing:.04em;color:rgba(255,255,255,.7)}
+.sp-body{padding:14px 16px 18px}
+.sp-days{margin-bottom:12px}
+.sp-days .chip.is-on{background:var(--teal-x);border-color:var(--teal-x);color:#fff}
+.sp-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line-2);border:1px solid var(--line-2);margin-bottom:12px}
+.sp-tile{background:#fff;padding:11px 12px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.sp-tile span{font-size:9px;font-weight:800;letter-spacing:.1em;color:var(--ink-3)}
+.sp-tile b{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--teal-x);word-break:break-word}
+.sp-tile small{font-size:11px;color:var(--ink-3);font-weight:700}
+.sp-breaks{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.sp-break{border:1px solid var(--line-2);background:#fff}
+.sp-break>span{display:block;font-size:9px;font-weight:800;letter-spacing:.12em;color:var(--ink-3);padding:8px 10px 4px}
+.sp-break div{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:6px 10px;border-top:1px solid var(--line-2);font-size:12px;align-items:baseline}
+.sp-break em{font-style:normal;font-weight:700;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.sp-break i{font-style:normal;font-weight:800;font-variant-numeric:tabular-nums;text-align:right}
+.sp-table{min-width:680px}
+.sp-table td{vertical-align:top;white-space:normal}
+.sp-table td span{font-size:10.5px;color:var(--ink-3);font-weight:600}
+.sp-table td.num{white-space:nowrap;font-weight:800}
+.sp-table tr:last-child td{background:inherit;font-weight:600}
+.sp-table tr.is-pending td{color:var(--warn)}
+.sp-x{background:none;border:1px solid var(--line);color:var(--ink-3);font-size:9.5px;font-weight:800;letter-spacing:.06em;padding:4px 7px}
+.sp-x:hover{border-color:var(--stop);color:var(--stop)}
+.sp-cancelled{margin-top:12px;font-size:11.5px;color:var(--ink-3);line-height:1.6}
+.sp-cancelled b{display:block;font-size:9px;letter-spacing:.12em;margin-bottom:3px}
+.sp-cancelled div{text-decoration:line-through;text-decoration-color:rgba(0,0,0,.25)}
+.sp-refused{background:#fdecec;border:1px solid #e6b9b9;color:var(--stop);padding:10px 12px;margin-bottom:12px;font-size:12px;line-height:1.55}
+.sp-refused b{display:block;font-size:10px;letter-spacing:.1em;margin-bottom:3px}
+.sp-refused .btn{margin-top:8px;border-color:#e6b9b9;color:var(--stop);padding:6px 10px}
+.sp-fresh{font-size:10.5px;font-weight:700;color:var(--ink-3);letter-spacing:.04em;align-self:center}
+.sp-actions{display:flex;gap:8px;margin-left:auto}
+.sales-card .d-foot{align-items:center}
+
+@media (max-width:860px){
+  .sp-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sp-breaks{grid-template-columns:1fr}
+  .sp-body{padding:12px 10px 16px}
+  .sp-tile b{font-size:17px}
+  .sp-actions{width:100%}
+  .sp-actions .btn{flex:1 1 auto;text-align:center}
+  .sale-card{max-width:none;height:100dvh;max-height:100dvh;padding:20px 16px calc(20px + var(--safe-b))}
+  .btn-sales{padding:8px 11px}
+}
+
 @media (prefers-reduced-motion:reduce){.side{transition:none}}
 
 /* the cost button never appears on a phone, tablet or iPad - any screen a customer
@@ -454,3 +533,5 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
 @media (max-width:1180px), (hover:none) and (pointer:coarse){
   #costBtn{display:none}
 }
+
+.card-price .por{font-style:normal;font-size:11px;letter-spacing:.06em;color:var(--ink-3)}

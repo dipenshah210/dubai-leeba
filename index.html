@@ -29,7 +29,8 @@
         <button id="vGrid" class="vt is-on" title="Grid view">&#9635;</button>
         <button id="vList" class="vt" title="List view">&#9776;</button>
       </div>
-      <button id="staffBtn" class="btn btn-lock" title="Stock control" hidden>&#128274;<span>STAFF</span></button>
+      <button id="staffBtn" class="btn btn-lock" title="Staff sign-in" hidden>&#128274;<span>STAFF</span></button>
+      <button id="salesBtn" class="btn btn-gold btn-sales" title="Sales and today's tally" hidden>SALES<b hidden></b></button>
       <button id="costBtn" class="btn btn-lock" title="Internal cost view">&#128274;<span>COST</span></button>
     </div>
   </div>
@@ -185,6 +186,7 @@
 
     <!-- always on screen -->
     <div class="d-foot">
+      <div class="d-sale" id="dSale" hidden></div>
       <div class="d-avail">
         <label>AVAILABILITY <span id="dStamp"></span></label>
         <div class="chips wrap" id="dAvail">
@@ -210,18 +212,82 @@
 <div class="modal" id="staff" hidden>
   <div class="modal-card unlock-card">
     <button class="icon-btn modal-x" data-close>&times;</button>
-    <h2 class="u-title">STOCK CONTROL</h2>
-    <p class="u-note">Marking a piece SOLD, HOLD or MEMO OUT changes it on every
-      device showing this page. Enter your own staff code &mdash; every change is
-      recorded against your name.</p>
+    <h2 class="u-title">STAFF SIGN-IN</h2>
+    <p class="u-note">Signing in lets you record sales and mark pieces HOLD or MEMO OUT.
+      Changes show on every device at once. Use your own code &mdash; every sale and
+      change is recorded against your name.</p>
     <form id="staffForm" autocomplete="off">
       <input id="staffCode" type="password" placeholder="Staff code" autocomplete="off" spellcheck="false">
       <label class="u-keep"><input type="checkbox" id="staffKeep" checked> Stay unlocked on this device</label>
       <div class="u-err" id="sErr" hidden>That code was not accepted.</div>
-      <button class="btn btn-gold wide" id="sGo" type="submit">UNLOCK STOCK CONTROL</button>
+      <button class="btn btn-gold wide" id="sGo" type="submit">SIGN IN</button>
     </form>
     <div id="staffWho" class="u-who" hidden></div>
-    <button id="staffOut" class="btn btn-ghost wide" hidden>LOCK STOCK CONTROL</button>
+    <button id="staffOut" class="btn btn-ghost wide" hidden>SIGN OUT</button>
+  </div>
+</div>
+
+<!-- ============================================================== sale -->
+<div class="modal" id="sale" hidden>
+  <div class="modal-card sale-card">
+    <button class="icon-btn modal-x" data-close title="Close">&times;</button>
+    <h2 class="u-title">RECORD SALE &middot; <span id="saleSku"></span></h2>
+    <p class="sale-desc" id="saleDesc"></p>
+    <form id="saleForm" autocomplete="off">
+      <label class="sf">CLIENT NAME
+        <input id="saleClient" type="text" placeholder="Name or company" autocomplete="off"></label>
+
+      <label class="sf">PRICE
+        <div class="sale-price">
+          <div class="chips" id="saleCur">
+            <button type="button" class="chip is-on" data-cur="USD">USD</button>
+            <button type="button" class="chip" data-cur="AED">AED</button>
+          </div>
+          <input id="salePrice" type="number" min="0" step="1" inputmode="decimal">
+        </div>
+        <small id="saleList"></small></label>
+
+      <div class="sf">PAYMENT
+        <div class="chips sale-pay" id="salePay">
+          <button type="button" class="chip" data-pay="CASH">CASH</button>
+          <button type="button" class="chip" data-pay="CARD">CARD</button>
+          <button type="button" class="chip" data-pay="BANK">BANK</button>
+        </div></div>
+
+      <label class="sf">REMARK <em>optional</em>
+        <input id="saleRemark" type="text" placeholder="Invoice no., deposit, delivery&hellip;" autocomplete="off"></label>
+
+      <div class="u-err" id="saleErr" hidden></div>
+      <p class="sale-who" id="saleWho"></p>
+      <button class="btn btn-gold wide" id="saleGo" type="submit" disabled>RECORD SALE</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============================================================= sales -->
+<div class="modal" id="salesPanel" hidden>
+  <div class="modal-card detail-card sales-card">
+    <div class="d-bar">
+      <div class="d-bar-id"><h2>SALES</h2><span class="sp-who" id="spWho"></span></div>
+      <button class="d-close" data-close title="Close">&times;</button>
+    </div>
+    <div class="d-scroll">
+      <div class="sp-body">
+        <div class="chips wrap sp-days" id="spDays"></div>
+        <div class="sp-refused" id="spRefused" hidden></div>
+        <div class="sp-tiles" id="spTiles"></div>
+        <div class="sp-breaks" id="spBreak"></div>
+        <div class="tbl-wrap"><table class="dna sp-table" id="spTable"></table></div>
+        <div class="sp-cancelled" id="spCancelled"></div>
+      </div>
+    </div>
+    <div class="d-foot">
+      <span class="sp-fresh" id="spFresh"></span>
+      <div class="sp-actions">
+        <button class="btn btn-ghost" id="spLock">SIGN OUT</button>
+        <button class="btn btn-gold" id="spExport">EXPORT DAY TO EXCEL</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -245,7 +311,8 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<!-- shipped with the site so exports still work when the hall wifi drops -->
+<script src="assets/exceljs.min.js"></script>
 <script src="config.js"></script>
 <script src="assets/shows.js"></script>
 
