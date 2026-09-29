@@ -38,23 +38,38 @@ window.LEEBA_CONFIG = {
        max    price ceiling in AED (optional)
        min    price floor in AED (optional)
 
+     Pick a category above and only that category's collections show;
+     with ALL, every collection shows.
+
      Counts are worked out from the live data every time the page loads,
      and any collection that matches nothing is hidden automatically - so
      these keep working when the stock list is swapped. Add, remove or
      re-order freely; the row scrolls.
   ---------------------------------------------------------------- */
   COLLECTIONS: [
-    { label: "Under AED 3,500",           max: 3500 },
-    { label: "Rings under AED 5,500",     cat: "RING",          max: 5500 },
-    { label: "Rings under AED 9,000",     cat: "RING",          max: 9000 },
-    { label: "Bracelets under AED 7,500", cat: "BRACELET",      max: 7500 },
-    { label: "Bracelets under AED 11,000",cat: "BRACELET",      max: 11000 },
-    { label: "Earrings under AED 3,500",  cat: "EARRING",       max: 3500 },
-    { label: "Earrings under AED 7,500",  cat: "EARRING",       max: 7500 },
-    { label: "Bands under AED 3,500",     cat: "ETERNITY BAND", max: 3500 },
-    { label: "Pendants under AED 3,500",  cat: "PENDANT",       max: 3500 },
-    { label: "Necklaces under AED 18,000",cat: "NECKLACE",      max: 18000 },
-    { label: "Statement AED 35,000+",     min: 35000 }
+    { label: "Under AED 5,000",            max: 5000 },
+    { label: "Under AED 10,000",           max: 10000 },
+    { label: "Rings under AED 5,000",      cat: "RING",          max: 5000 },
+    { label: "Rings under AED 10,000",     cat: "RING",          max: 10000 },
+    { label: "Rings under AED 20,000",     cat: "RING",          max: 20000 },
+    { label: "Rings AED 50,000+",          cat: "RING",          min: 50000 },
+    { label: "Earrings under AED 5,000",   cat: "EARRING",       max: 5000 },
+    { label: "Earrings under AED 10,000",  cat: "EARRING",       max: 10000 },
+    { label: "Earrings under AED 20,000",  cat: "EARRING",       max: 20000 },
+    { label: "Bracelets under AED 15,000", cat: "BRACELET",      max: 15000 },
+    { label: "Bracelets under AED 25,000", cat: "BRACELET",      max: 25000 },
+    { label: "Bracelets under AED 40,000", cat: "BRACELET",      max: 40000 },
+    { label: "Bands under AED 5,000",      cat: "ETERNITY BAND", max: 5000 },
+    { label: "Bands under AED 8,000",      cat: "ETERNITY BAND", max: 8000 },
+    { label: "Bands under AED 12,000",     cat: "ETERNITY BAND", max: 12000 },
+    { label: "Pendants under AED 5,000",   cat: "PENDANT",       max: 5000 },
+    { label: "Pendants under AED 10,000",  cat: "PENDANT",       max: 10000 },
+    { label: "Pendants under AED 15,000",  cat: "PENDANT",       max: 15000 },
+    { label: "Necklaces under AED 40,000", cat: "NECKLACE",      max: 40000 },
+    { label: "Necklaces under AED 75,000", cat: "NECKLACE",      max: 75000 },
+    { label: "Necklaces AED 150,000+",     cat: "NECKLACE",      min: 150000 },
+    { label: "Bangles",                    cat: "BANGLE" },
+    { label: "Statement AED 100,000+",     min: 100000 }
   ],
 
   /* ----------------------------------------------------------------

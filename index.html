@@ -19,7 +19,7 @@
 
     <div class="search">
       <span class="search-ico" aria-hidden="true">&#9906;</span>
-      <input id="q" type="search" placeholder="Search SKU, description, shape, certificate&hellip;" autocomplete="off" spellcheck="false">
+      <input id="q" type="search" placeholder="Search SKU, tray, description, shape&hellip;" autocomplete="off" spellcheck="false">
       <button id="qClear" class="icon-btn search-x" title="Clear" hidden>&times;</button>
     </div>
 
@@ -59,7 +59,11 @@
   <!-- ready-made collections to put in front of a client -->
   <div class="collbar" id="collBar" hidden>
     <span class="coll-label">COLLECTIONS</span>
-    <div class="coll-scroll" id="collScroll"></div>
+    <div class="coll-wrap">
+      <button class="coll-arr coll-l" id="collL" aria-label="Scroll left" hidden>&lsaquo;</button>
+      <div class="coll-scroll" id="collScroll"></div>
+      <button class="coll-arr coll-r" id="collR" aria-label="Scroll right" hidden>&rsaquo;</button>
+    </div>
   </div>
 </header>
 
@@ -74,7 +78,7 @@
 
     <div class="side-body">
       <div class="f"><label>CATEGORY</label><div class="chips wrap" id="fCat"></div></div>
-      <div class="f"><label>LOCATION</label><div class="chips wrap" id="fLoc"></div></div>
+      <div class="f"><label>DISPLAY TRAY</label><div class="chips wrap" id="fLoc"></div></div>
       <div class="f"><label>METAL COLOUR</label><div class="chips wrap" id="fTone"></div></div>
       <div class="f"><label>PURITY</label><div class="chips wrap" id="fPurity"></div></div>
       <div class="f"><label>DIAMOND SHAPE</label><div class="chips wrap" id="fShape"></div></div>

@@ -123,6 +123,15 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
   white-space:nowrap;scrollbar-width:none;-webkit-overflow-scrolling:touch;
 }
 .coll-scroll::-webkit-scrollbar{display:none}
+.coll-wrap{position:relative;flex:1 1 auto;min-width:0;display:flex}
+.coll-arr{
+  position:absolute;top:0;bottom:0;z-index:2;width:34px;border:0;
+  font-size:22px;line-height:1;font-weight:700;color:var(--gold);cursor:pointer;
+}
+.coll-arr[hidden]{display:none}
+.coll-l{left:0;background:linear-gradient(90deg,var(--teal-x) 55%,transparent)}
+.coll-r{right:0;background:linear-gradient(270deg,var(--teal-x) 55%,transparent)}
+.coll[hidden]{display:none}
 .coll{
   flex:0 0 auto;background:transparent;border:1px solid rgba(201,169,109,.5);
   color:#f0e4cc;padding:7px 12px;font-size:11px;font-weight:800;letter-spacing:.04em;
@@ -181,7 +190,9 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
 .card-img{position:relative;aspect-ratio:1/1;background:#fff;overflow:hidden;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--line-2)}
 .card-img img{width:100%;height:100%;object-fit:contain}
 .card-img .noimg{font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--ink-3)}
-.card-loc{position:absolute;top:0;left:0;padding:4px 8px;font-size:10px;font-weight:800;letter-spacing:.07em;color:#fff}
+.card-loc{position:absolute;top:0;left:0;padding:4px 8px;font-size:10px;font-weight:800;letter-spacing:.07em;color:#fff;
+  max-width:calc(100% - 40px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.loc-tray{background:var(--teal-d)}
 .loc-D{background:var(--teal-d)} .loc-H{background:var(--ok)} .loc-I{background:#9a5b28}
 .loc-S{background:#6b4d8a} .loc-U{background:#8a5b3d}
 .card-pick{

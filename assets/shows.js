@@ -38,7 +38,9 @@ var sel = new Set();
 var avail = {};
 var cost = null;                // decrypted internal payload, memory only
 var activeColl = -1;
-var HAS_LOC = false;             // set from the data: no location column -> no location anywhere
+var HAS_LOC = false;             // set from the data: true once any piece has a display tray
+var OFF_TRAY = "NOT ON DISPLAY";
+function trayOf(p) { return p.TRAY || OFF_TRAY; }
 
 /* Every list filter holds a SET, so several values can be on at once:
    RING + BRACELET together, D + I together, and so on. An empty set means
@@ -517,19 +519,20 @@ function items(map, sorter) {
 
 function buildFilters() {
   var cats     = tally(function (p) { return p.CATEGORY; });
-  var locs     = tally(function (p) { return p.LOC; });
-  // Every piece at one place (the Sharjah show) - or no location column at all -
-  // means there is nothing to filter on, so the chips, the filter section, the
-  // card badge and the export column all go.
-  HAS_LOC = Object.keys(locs).length > 1;
-  $("#locChips").hidden = !HAS_LOC;
+  // Display trays: which tray at the stand a piece sits in. Filterable in the
+  // FILTERS panel, searchable by name, badged on the card and in the detail.
+  var locs     = tally(trayOf);
+  HAS_LOC = ALL.some(function (p) { return p.TRAY; });
+  $("#locChips").hidden = true;
   $("#fLoc").closest(".f").hidden = !HAS_LOC;
   var tones    = tally(function (p) { return p.METAL_COLOR; });
   var purities = tally(function (p) { return p.METAL_KT; });
   var shapes   = tally(shapesOf);
 
   var catItems   = items(cats);
-  var locItems   = items(locs);
+  var locItems   = items(locs, function (a, b) {
+    return (a === OFF_TRAY) - (b === OFF_TRAY) || (a < b ? -1 : a > b ? 1 : 0);
+  });
   var toneItems  = items(tones);
   var shapeItems = items(shapes).sort(function (a, b) { return b.n - a.n; });
   var purItems   = items(purities, function (a, b) { return b - a; }).map(function (it) {
@@ -622,6 +625,7 @@ function buildCollections() {
            ' <b>' + c.n + '</b></button>';
   }).join("");
 
+  wireCollScroll();
   $("#collScroll").addEventListener("click", function (e) {
     var b = e.target.closest(".coll"); if (!b) return;
     var i = +b.dataset.coll;
@@ -645,9 +649,40 @@ function matchesColl(p, d) {
   return true;
 }
 function syncColl() {
+  // With categories picked, only those categories' collections show (plus the
+  // one in use); with ALL, every collection shows.
+  var any = 0;
   $$("#collScroll .coll").forEach(function (c) {
-    c.classList.toggle("is-on", +c.dataset.coll === activeColl);
+    var i = +c.dataset.coll, d = COLL[i].def;
+    var show = i === activeColl || !filt.cats.size || (d.cat ? filt.cats.has(d.cat) : false);
+    c.hidden = !show;
+    if (show) any++;
+    c.classList.toggle("is-on", i === activeColl);
   });
+  if (COLL.length) $("#collBar").hidden = !any;
+  collArrows();
+}
+function collArrows() {
+  var s = $("#collScroll"), l = $("#collL"), r = $("#collR");
+  if (!s || !l) return;
+  var max = s.scrollWidth - s.clientWidth;
+  l.hidden = s.scrollLeft <= 2;
+  r.hidden = s.scrollLeft >= max - 2;
+}
+function wireCollScroll() {
+  var s = $("#collScroll");
+  // desktop mice scroll vertically - turn that into sideways movement here
+  s.addEventListener("wheel", function (e) {
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && s.scrollWidth > s.clientWidth) {
+      s.scrollLeft += e.deltaY; e.preventDefault();
+    }
+  }, { passive: false });
+  s.addEventListener("scroll", collArrows, { passive: true });
+  window.addEventListener("resize", collArrows);
+  window.addEventListener("load", collArrows);
+  setTimeout(collArrows, 60); setTimeout(collArrows, 600);
+  $("#collL").addEventListener("click", function () { s.scrollBy({ left: -s.clientWidth * 0.8, behavior: "smooth" }); });
+  $("#collR").addEventListener("click", function () { s.scrollBy({ left:  s.clientWidth * 0.8, behavior: "smooth" }); });
 }
 
 /* --------------------------------------------------------- active bar */
@@ -715,7 +750,7 @@ function apply() {
   var q = filt.q.toLowerCase().trim();
 
   VIEW = ALL.filter(function (p) {
-    if (filt.locs.size && !filt.locs.has(p.LOC)) return false;
+    if (filt.locs.size && !filt.locs.has(trayOf(p))) return false;
     if (filt.cats.size && !filt.cats.has(p.CATEGORY)) return false;
     if (filt.tones.size && !filt.tones.has(p.METAL_COLOR)) return false;
     if (filt.purities.size && !filt.purities.has(String(p.METAL_KT))) return false;
@@ -732,7 +767,7 @@ function apply() {
     if (filt.prMin !== null && !(aedOf(p) >= filt.prMin)) return false;
     if (filt.prMax !== null && !(aedOf(p) <= filt.prMax)) return false;
     if (q) {
-      var hay = [p.SKU, p.DESCRIPTION, p.CATEGORY, p.SHAPES, p.CENTER_SHAPE, p.QUALITY,
+      var hay = [p.SKU, p.TRAY, p.DESCRIPTION, p.CATEGORY, p.SHAPES, p.CENTER_SHAPE, p.QUALITY,
                  p.METAL_RAW, p.CERT, p.CENTER_CERT].join(" ").toLowerCase();
       if (hay.indexOf(q) === -1) return false;
     }
@@ -790,7 +825,7 @@ function cardHTML(p) {
     '<div class="card-img">' +
       (im ? '<img loading="lazy" decoding="async" src="' + esc(srcFor(im)) + '" alt="' + esc(p.SKU) + '">'
           : '<span class="noimg">NO PHOTO</span>') +
-      (HAS_LOC && p.LOC ? '<span class="card-loc loc-' + esc(p.LOC) + '">' + esc(p.LOC) + '</span>' : "") +
+      (p.TRAY ? '<span class="card-loc loc-tray" title="' + esc(p.TRAY) + '">' + esc(p.TRAY) + '</span>' : "") +
       (st !== "AVAILABLE" ? '<span class="status st-' + esc(st.replace(/\s/g, "")) + '">' + esc(st) + '</span>' : "") +
     '</div>' +
     '<button class="card-pick" data-pick="1" title="Select">&#10003;</button>' +
@@ -850,9 +885,9 @@ function openDetail(sku) {
 
   $("#dSku").textContent = p.SKU;
   var loc = $("#dLoc");
-  loc.hidden = !(HAS_LOC && p.LOC);
-  loc.textContent = p.LOC || "";
-  loc.className = "badge loc-" + (p.LOC || "");
+  loc.hidden = !p.TRAY;
+  loc.textContent = p.TRAY || "";
+  loc.className = "badge loc-tray";
   $("#dCat").textContent = p.CATEGORY || "";
   $("#dDesc").textContent = p.DESCRIPTION || "";
 
@@ -977,7 +1012,7 @@ function exportRows(picked, label) {
               "GROSS WT (gm)", "NET GOLD (gm)", "CENTRE CT", "SIDE CT", "TOTAL CT", "PCS",
               "CENTRE STONE", "QUALITY", "SHAPES", "CERT", "AVAILABILITY",
               "SELLING PRICE (AED)", "SELLING PRICE (USD)", "PER CARAT (AED)"];
-  if (HAS_LOC) head.splice(2, 0, "LOCATION");
+  if (HAS_LOC) head.splice(2, 0, "TRAY");
   if (cost) head = head.concat(["COST (USD)", "MARKUP"]);
 
   var s1 = wb.addWorksheet("COLLECTION");
@@ -994,7 +1029,7 @@ function exportRows(picked, label) {
         .filter(Boolean).join(" ") : "",
       p.QUALITY || "", p.SHAPES || "", p.CENTER_CERT || p.CERT || "", availOf(p),
       aedOf(p) || "ON REQUEST", sellOf(p) || "", p.SELL_PER_CT_USD ? Math.round(p.SELL_PER_CT_USD * RATE) : ""];
-    if (HAS_LOC) row.splice(2, 0, p.LOC || "");
+    if (HAS_LOC) row.splice(2, 0, p.TRAY || "");
     if (cost) {
       var c = cost[p.SKU] || {};
       row = row.concat([c.cost || "", c.markup || ""]);
@@ -1044,7 +1079,7 @@ function exportCsv(picked) {
   var head = ["SR", "SKU", "CATEGORY", "DESCRIPTION", "PURITY", "TONE",
               "GROSS WT", "NET GOLD", "TOTAL CT", "PCS", "QUALITY", "CERT",
               "AVAILABILITY", "SELLING PRICE (AED)", "SELLING PRICE (USD)"];
-  if (HAS_LOC) head.splice(2, 0, "LOCATION");
+  if (HAS_LOC) head.splice(2, 0, "TRAY");
   if (cost) head.push("COST", "MARKUP");
   var lines = [head.join(",")];
   picked.forEach(function (p, i) {
@@ -1052,7 +1087,7 @@ function exportCsv(picked) {
              p.METAL_KT ? p.METAL_KT + "K" : "", p.METAL_COLOR || "", p.GROSS_WT_GM || "",
              p.NET_GOLD_WT_GM || "", p.TOTAL_CT || "", pcsOf(p) || "", p.QUALITY || "",
              p.CENTER_CERT || p.CERT || "", availOf(p), aedOf(p) || "ON REQUEST", sellOf(p) || ""];
-    if (HAS_LOC) r.splice(2, 0, p.LOC || "");
+    if (HAS_LOC) r.splice(2, 0, p.TRAY || "");
     if (cost) { var c = cost[p.SKU] || {}; r.push(c.cost || "", c.markup || ""); }
     lines.push(r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(","));
   });
