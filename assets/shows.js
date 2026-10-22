@@ -90,6 +90,54 @@ function imgs(p) {
   return p.IMAGES_ALL ? p.IMAGES_ALL.split(",").map(function (s) { return s.trim(); })
                       : (p.IMAGE ? [p.IMAGE] : []);
 }
+
+/* ANY EXTENSION: a photo shows whether it was uploaded as .jpg, .jpeg or .png
+   (upper or lower case). Each picture first tries the file named in the
+   catalogue, then the same name with the other extensions, then the stock ID
+   itself (DJ-123.jpg / .jpeg / .png ...). So a new photo saved as
+   images/<STOCK ID>.<anything> appears on its own - no catalogue update needed.
+   What worked (or that nothing did) is remembered, so each photo is only
+   searched for once per visit. */
+var PHOTO_EXTS = ["jpg", "jpeg", "png", "JPG", "JPEG", "PNG", "webp"];
+var PHOTO_OK = {}, PHOTO_NONE = {};
+function photoTries(p) {
+  var out = [], seen = {};
+  function add(f) { if (f && !seen[f]) { seen[f] = 1; out.push(f); } }
+  imgs(p).forEach(function (f) {
+    add(f);
+    var base = f.replace(/\.[^.\/]+$/, "");
+    PHOTO_EXTS.forEach(function (e) { add(base + "." + e); });
+  });
+  PHOTO_EXTS.forEach(function (e) { add(p.SKU + "." + e); });
+  return out;
+}
+function firstPhoto(p) {
+  if (PHOTO_NONE[p.SKU]) return null;
+  return PHOTO_OK[p.SKU] || photoTries(p)[0];
+}
+function bySku(sku) { return ALL.find(function (x) { return x.SKU === sku; }); }
+// one listener for every product photo on the page: on a 404, move to the next name
+document.addEventListener("error", function (e) {
+  var im = e.target;
+  if (!im || im.tagName !== "IMG" || !im.dataset || !im.dataset.psku) return;
+  var p = bySku(im.dataset.psku); if (!p) return;
+  var list = photoTries(p), i = list.indexOf(im.dataset.pfile) + 1;
+  if (i > 0 && i < list.length) { im.dataset.pfile = list[i]; im.src = srcFor(list[i]); return; }
+  PHOTO_NONE[p.SKU] = true;
+  im.hidden = true;
+  var box = im.parentNode, ph = box && box.querySelector(".noimg");
+  if (ph) ph.hidden = false;
+}, true);
+document.addEventListener("load", function (e) {
+  var im = e.target;
+  if (im && im.tagName === "IMG" && im.dataset && im.dataset.psku) PHOTO_OK[im.dataset.psku] = im.dataset.pfile;
+}, true);
+function photoTag(p, extra) {
+  var f = firstPhoto(p);
+  return (f ? '<img ' + (extra || "") + ' src="' + esc(srcFor(f)) + '" data-psku="' + esc(p.SKU) +
+              '" data-pfile="' + esc(f) + '" alt="' + esc(p.SKU) + '">' : "") +
+         '<span class="noimg"' + (f ? " hidden" : "") + '>NO PHOTO</span>';
+}
 /* sellOf is the price a client pays today: the SALE / PROMO price when the piece
    has one, otherwise the normal selling price. wasOf is the normal price, only
    for pieces on offer - it is what gets crossed out. */
@@ -843,8 +891,7 @@ function cardHTML(p) {
     (st !== "AVAILABLE" ? " row-" + esc(st.replace(/\s/g, "")) : "") +
     '" data-sku="' + esc(p.SKU) + '">' +
     '<div class="card-img">' +
-      (im ? '<img loading="lazy" decoding="async" src="' + esc(srcFor(im)) + '" alt="' + esc(p.SKU) + '">'
-          : '<span class="noimg">NO PHOTO</span>') +
+      photoTag(p, 'loading="lazy" decoding="async"') +
       (p.TRAY && offerOf(p) !== "PROMO" ? '<span class="card-loc loc-tray" title="' + esc(p.TRAY) + '">' + esc(p.TRAY) + '</span>' : "") +
       (offerOf(p) ? '<span class="card-offer off-' + esc(offerOf(p)) + (p.TRAY && offerOf(p) !== "PROMO" ? " below" : "") + '">' + esc(offerOf(p)) + '</span>' : "") +
       (st !== "AVAILABLE" ? '<span class="status st-' + esc(st.replace(/\s/g, "")) + '">' + esc(st) + '</span>' : "") +
@@ -914,7 +961,9 @@ function openDetail(sku) {
   $("#dDesc").textContent = p.DESCRIPTION || "";
 
   var big = $("#dImg");
-  if (list.length) { big.src = srcFor(list[0]); big.hidden = false; } else { big.hidden = true; }
+  var f0 = firstPhoto(p);
+  if (f0) { big.dataset.psku = p.SKU; big.dataset.pfile = f0; big.src = srcFor(f0); big.hidden = false; }
+  else { big.removeAttribute("data-psku"); big.hidden = true; }
   $("#dThumbs").innerHTML = list.length > 1 ? list.map(function (f, i) {
     return '<img src="' + esc(srcFor(f)) + '" data-full="' + esc(srcFor(f)) + '"' +
            (i === 0 ? ' class="is-on"' : "") + ' alt="">';
