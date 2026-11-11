@@ -389,7 +389,7 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
 
 @media (max-width:860px){
   .hdr-main{padding:8px 12px;flex-wrap:wrap}
-  .brand-sub{display:none}
+  .brand-sub{display:block;font-size:7.5px;letter-spacing:.06em;line-height:1.35;margin-top:2px;white-space:normal;max-width:52vw}
   .sync{padding:4px 7px;font-size:9px;letter-spacing:.06em}
   .search{order:3;width:100%;max-width:none;margin:6px 0 0}
   .hdr-bar{padding:0 12px 8px}

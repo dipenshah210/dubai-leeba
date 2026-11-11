@@ -86,6 +86,21 @@ function srcFor(file) {
   if (THUMBS && THUMBS[file]) return THUMBS[file];
   return IMG_BASE + encodeURIComponent(file);
 }
+/* FAST PHOTOS: the photos in images/ are full-size camera files (100-700 KB).
+   Cards ask a free image-resizing service (wsrv.nl, cached worldwide) for a
+   small WebP copy instead - roughly a tenth of the size - and the detail view
+   asks for a larger one. If the service ever fails, the original file loads,
+   so a photo never goes missing because of it. Set THUMB_VIA: "" in config.js
+   to switch this off. */
+var THUMB_VIA = CFG.THUMB_VIA === undefined ? "https://wsrv.nl/?url=" : CFG.THUMB_VIA;
+var THUMB_OK = !!THUMB_VIA && location.protocol === "https:" &&
+               !/^(localhost|127\.|192\.168\.)/.test(location.hostname);
+function viaThumb(file, w) {
+  var src = srcFor(file);
+  if (!THUMB_OK || /^(data:|blob:)/.test(src)) return src;
+  return THUMB_VIA + encodeURIComponent(new URL(src, location.href).href) +
+         "&w=" + w + "&output=webp&q=78&we";
+}
 function imgs(p) {
   return p.IMAGES_ALL ? p.IMAGES_ALL.split(",").map(function (s) { return s.trim(); })
                       : (p.IMAGE ? [p.IMAGE] : []);
@@ -103,12 +118,14 @@ var PHOTO_OK = {}, PHOTO_NONE = {};
 function photoTries(p) {
   var out = [], seen = {};
   function add(f) { if (f && !seen[f]) { seen[f] = 1; out.push(f); } }
-  imgs(p).forEach(function (f) {
+  var known = imgs(p);
+  known.forEach(function (f) {
     add(f);
     var base = f.replace(/\.[^.\/]+$/, "");
     PHOTO_EXTS.forEach(function (e) { add(base + "." + e); });
   });
-  PHOTO_EXTS.forEach(function (e) { add(p.SKU + "." + e); });
+  // no photo when the catalogue was built: look for one uploaded since, by stock ID
+  (known.length ? PHOTO_EXTS : ["jpg", "jpeg", "png", "JPG"]).forEach(function (e) { add(p.SKU + "." + e); });
   return out;
 }
 function firstPhoto(p) {
@@ -121,6 +138,7 @@ document.addEventListener("error", function (e) {
   var im = e.target;
   if (!im || im.tagName !== "IMG" || !im.dataset || !im.dataset.psku) return;
   var p = bySku(im.dataset.psku); if (!p) return;
+  if (im.dataset.pthumb === "1") { im.dataset.pthumb = "0"; im.src = srcFor(im.dataset.pfile); return; }
   var list = photoTries(p), i = list.indexOf(im.dataset.pfile) + 1;
   if (i > 0 && i < list.length) { im.dataset.pfile = list[i]; im.src = srcFor(list[i]); return; }
   PHOTO_NONE[p.SKU] = true;
@@ -134,7 +152,10 @@ document.addEventListener("load", function (e) {
 }, true);
 function photoTag(p, extra) {
   var f = firstPhoto(p);
-  return (f ? '<img ' + (extra || "") + ' src="' + esc(srcFor(f)) + '" data-psku="' + esc(p.SKU) +
+  // only photos the catalogue knows exist go through the resizer; guesses load directly
+  var tsrc = f ? (imgs(p).indexOf(f) >= 0 || PHOTO_OK[p.SKU] ? viaThumb(f, 480) : srcFor(f)) : "";
+  return (f ? '<img ' + (extra || "") + ' src="' + esc(tsrc) + '" data-pthumb="' + (tsrc !== srcFor(f) ? 1 : 0) +
+              '" data-psku="' + esc(p.SKU) +
               '" data-pfile="' + esc(f) + '" alt="' + esc(p.SKU) + '">' : "") +
          '<span class="noimg"' + (f ? " hidden" : "") + '>NO PHOTO</span>';
 }
@@ -490,6 +511,11 @@ function boot() {
       : fetch(CFG.CATALOG || "data/catalog.json", { cache: "no-cache" })
           .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }))
     .then(function (j) {
+      // the catalogue says what it is - regular Dubai stock or a show - so the
+      // header, page title and export names follow it without editing config.js
+      if (j.strap) { $("#brandSub").innerHTML = esc(j.strap); document.title = "LEEBA \u2014 " + j.strap; }
+      if (j.exhibition) SHOW_NAME = j.exhibition;
+      if (j.tag) TAG = j.tag;
       ALL = j.products || [];
       buildFilters();
       buildCollections();
@@ -962,7 +988,11 @@ function openDetail(sku) {
 
   var big = $("#dImg");
   var f0 = firstPhoto(p);
-  if (f0) { big.dataset.psku = p.SKU; big.dataset.pfile = f0; big.src = srcFor(f0); big.hidden = false; }
+  if (f0) {
+    var bsrc = viaThumb(f0, 1100);
+    big.dataset.psku = p.SKU; big.dataset.pfile = f0; big.dataset.pthumb = bsrc !== srcFor(f0) ? "1" : "0";
+    big.src = bsrc; big.hidden = false;
+  }
   else { big.removeAttribute("data-psku"); big.hidden = true; }
   $("#dThumbs").innerHTML = list.length > 1 ? list.map(function (f, i) {
     return '<img src="' + esc(srcFor(f)) + '" data-full="' + esc(srcFor(f)) + '"' +
@@ -1570,7 +1600,7 @@ function wire() {
   // detail
   $("#dImg").addEventListener("click", function () {
     if (!this.src) return;
-    $("#lbImg").src = this.src; $("#lightbox").hidden = false;
+    $("#lbImg").src = this.dataset.pfile ? srcFor(this.dataset.pfile) : this.src; $("#lightbox").hidden = false;
   });
   $("#dThumbs").addEventListener("click", function (e) {
     var im = e.target.closest("img"); if (!im) return;
