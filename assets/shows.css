@@ -575,8 +575,8 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
 .is-list .card-offer.below{top:18px}
 
 /* ------------------------------------------------- owners and tally */
-/* owner is shown to everyone (Dipen, 12 Nov 2026) - .staff-only is kept for anything that must stay internal */
-.staff-only.keep-staff{display:none}body.is-staff .staff-only.keep-staff{display:revert}
+/* owner names, owner filter and tally: signed-in staff only */
+body:not(.is-staff) .staff-only{display:none!important}
 .card-own{position:absolute;top:0;left:0;padding:3px 7px;font-size:9px;font-weight:900;letter-spacing:.1em;color:#fff;z-index:2;
   max-width:calc(100% - 40px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .own-LB{background:#0f4040}.own-RS{background:#7a3f8f}.own-SM{background:#b5651d}.own-RB{background:#a3243b}.own-PT{background:#2f5f9e}

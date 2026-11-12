@@ -306,6 +306,9 @@ function staffButtons() {
   document.body.classList.toggle("is-staff", !!staff);
   $("#staffBtn").hidden = !STOCK_ON || !!staff;
   $("#salesBtn").hidden = !STOCK_ON || !staff;
+  // signed out: drop any owner filter so customers never see a list cut by owner
+  if (!staff && filt.owners && filt.owners.size) { filt.owners.clear(); syncChips(); apply(); }
+  if (ALL.length) selbar();
 }
 
 function syncPill() {
@@ -1906,7 +1909,7 @@ function selbar() {
     f("DIA PCS", t.pcs || "&ndash;") +
     f("GROSS WT", t.gw.toFixed(2) + " g") +
     f("NET WT", t.nw.toFixed(2) + " g") +
-    f("OWNER", owners.map(function (o) { return esc(o) + " " + t.own[o]; }).join(" &middot; "), "sf-own");
+    (staff ? f("OWNER", owners.map(function (o) { return esc(o) + " " + t.own[o]; }).join(" &middot; "), "sf-own") : "");
   $("#selbar").hidden = sel.size === 0;
 }
 function selectList(list) {
@@ -2023,7 +2026,7 @@ function wire() {
     var go = this; go.disabled = true;
     exportRows(EXP.list, EXP.label, {
       photos: $("#exPhotos").checked, price: $("#exPrice").checked,
-      owner: $("#exOwner").checked, cost: !!cost && $("#exCost").checked
+      owner: !!staff && $("#exOwner").checked, cost: !!cost && $("#exCost").checked
     }).then(function () { go.disabled = false; $("#expDlg").hidden = true; $("#expProg").hidden = true; },
             function () { go.disabled = false; });
   });
