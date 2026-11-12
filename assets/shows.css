@@ -81,7 +81,7 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
   padding:7px 11px;font-size:11px;font-weight:800;letter-spacing:.05em;
 }
 .chip b{font-weight:800;opacity:.55;margin-left:4px;font-variant-numeric:tabular-nums}
-.chip.is-on{background:var(--ink);border-color:var(--ink);color:#fff}
+.chip.is-on{background:var(--teal-d);border-color:var(--teal-d);color:#fff}
 .chip.is-on b{opacity:.7}
 .hdr .chip{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.85)}
 .hdr .chip.is-on{background:var(--teal);border-color:var(--teal);color:var(--teal-ink)}
@@ -181,7 +181,9 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
 .apill span{color:var(--ink-3);font-size:13px;line-height:1}
 .apill:hover{border-color:var(--stop)}
 .apill:hover span{color:var(--stop)}
-.apill-clear{background:var(--ink);border-color:var(--ink);color:#fff}
+.apill-clear{background:var(--teal-d);border-color:var(--teal-d);color:#fff}
+.apill-sel{background:var(--gold);border-color:var(--gold);color:#231a06}
+.apill-sel:hover{border-color:var(--gold-d)}
 
 /* -------------------------------------------------------------- card */
 .card{background:var(--card);border:1px solid var(--line);position:relative;display:flex;flex-direction:column;cursor:pointer}
@@ -250,14 +252,24 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
 
 /* ------------------------------------------------------------ selbar */
 .selbar{
-  position:fixed;left:0;right:0;bottom:0;z-index:45;background:var(--ink);color:#fff;
-  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  position:fixed;left:0;right:0;bottom:0;z-index:45;
+  background:linear-gradient(90deg,var(--teal-d),#21857f);color:#fff;
+  display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
   padding:10px 16px calc(10px + var(--safe-b));border-top:3px solid var(--gold);
+  box-shadow:0 -6px 18px rgba(15,64,64,.18);
 }
-.selbar-count{font-size:12px;font-weight:800;letter-spacing:.08em;font-variant-numeric:tabular-nums}
-.selbar-count b{color:var(--gold);font-size:16px}
+.selbar-info{display:flex;align-items:center;gap:14px;flex-wrap:wrap;min-width:0}
+.selbar-count{font-size:12px;font-weight:800;letter-spacing:.08em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.selbar-count b{color:#fff;font-size:18px}
+.selbar-facts{display:flex;flex-wrap:wrap;gap:6px}
+.sf-i{display:inline-flex;flex-direction:column;background:rgba(255,255,255,.13);padding:3px 9px;line-height:1.25;font-variant-numeric:tabular-nums}
+.sf-i span{font-size:9px;font-weight:800;letter-spacing:.1em;color:rgba(255,255,255,.75)}
+.sf-i b{font-size:13px;color:#fff}
+.sf-i.sf-val{background:var(--gold);}
+.sf-i.sf-val span{color:#4a3a14}.sf-i.sf-val b{color:#231a06}
+.sf-i.sf-own b{font-size:11px;font-weight:700}
 .selbar-actions{display:flex;gap:8px}
-.selbar .btn-ghost{border-color:rgba(255,255,255,.3);color:#fff}
+.selbar .btn-ghost{border-color:rgba(255,255,255,.5);color:#fff}
 
 /* ------------------------------------------------------------ modals */
 .modal{position:fixed;inset:0;z-index:60;background:rgba(6,18,17,.74);display:flex;align-items:center;justify-content:center;padding:18px}
@@ -362,7 +374,7 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
 
 .toast{
   position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:80;
-  background:var(--ink);color:#fff;padding:10px 18px;font-size:12px;font-weight:800;
+  background:var(--teal-x);color:#fff;padding:10px 18px;font-size:12px;font-weight:800;
   letter-spacing:.06em;border-left:3px solid var(--gold);
 }
 
@@ -383,7 +395,7 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
   .side.is-open{transform:none}
   .side-head{
     display:flex;align-items:center;justify-content:space-between;padding:13px 16px;
-    background:var(--ink);color:#fff;font-size:12px;font-weight:800;letter-spacing:.12em;flex:0 0 auto;
+    background:var(--teal-x);color:#fff;font-size:12px;font-weight:800;letter-spacing:.12em;flex:0 0 auto;
   }
 }
 
@@ -563,7 +575,8 @@ h2,h3{margin:0;font-weight:800;letter-spacing:.02em}
 .is-list .card-offer.below{top:18px}
 
 /* ------------------------------------------------- owners and tally */
-body:not(.is-staff) .staff-only{display:none!important}
+/* owner is shown to everyone (Dipen, 12 Nov 2026) - .staff-only is kept for anything that must stay internal */
+.staff-only.keep-staff{display:none}body.is-staff .staff-only.keep-staff{display:revert}
 .card-own{position:absolute;top:0;left:0;padding:3px 7px;font-size:9px;font-weight:900;letter-spacing:.1em;color:#fff;z-index:2;
   max-width:calc(100% - 40px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .own-LB{background:#0f4040}.own-RS{background:#7a3f8f}.own-SM{background:#b5651d}.own-RB{background:#a3243b}.own-PT{background:#2f5f9e}
@@ -582,3 +595,21 @@ body:not(.is-staff) .staff-only{display:none!important}
 .tally-t tr.tot td{background:#f3e7cf;font-weight:800}
 .tally-foot{padding:10px 18px 16px;display:flex;justify-content:flex-end}
 .apill-miss{display:inline-flex;align-items:center;padding:5px 9px;font-size:10.5px;font-weight:800;color:#8e2f2f;background:#f9e3e1;letter-spacing:.03em}
+
+/* -------------------------------------------- header stats buttons + export */
+.stat-btn{margin-left:10px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);color:#fff;
+  font-size:10px;font-weight:800;letter-spacing:.08em;padding:4px 9px}
+.stat-btn:hover{background:var(--gold);border-color:var(--gold);color:#231a06}
+.exp-card{max-width:440px}
+.exp-card em{font-style:normal;color:var(--ink-3);font-weight:600}
+.exp-prog{font-size:12px;font-weight:700;color:var(--teal-d);margin:12px 0 0}
+.tally-scope{display:flex;gap:6px;margin-left:auto}
+.tally-scope .chip{font-size:10px;padding:5px 9px}
+@media (max-width:640px){
+  .selbar{gap:8px}
+  .selbar-actions{width:100%}
+  .selbar-actions .btn{flex:1 1 auto}
+  .sf-i{padding:2px 7px}.sf-i b{font-size:12px}
+  .stat-btn{margin-left:6px;padding:3px 7px}
+}
+.tally-card .modal-x{background:none;border:0;font-size:26px;color:var(--teal-x)}

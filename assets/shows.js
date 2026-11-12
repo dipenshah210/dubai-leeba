@@ -529,6 +529,8 @@ function boot() {
       buildFilters();
       buildCollections();
       apply();
+      var want = (new URLSearchParams(location.search).get("sku") || "").toUpperCase();
+      if (want && bySku(want)) openDetail(want);
       if (STOCK_ON) {
         pollStock();
         setInterval(pollStock, POLL_MS);
@@ -833,6 +835,8 @@ function activeBar() {
     var ix = bcIndex(), uniq = bl.filter(function (x, i) { return bl.indexOf(x) === i; });
     var notf = uniq.filter(function (x) { return !ix[x]; });
     push("q", "", uniq.length + " BARCODES (" + (uniq.length - notf.length) + " FOUND)");
+    if (uniq.length > notf.length)
+      bits.push('<button class="apill apill-sel" data-kind="selview">SELECT ALL ' + (uniq.length - notf.length) + ' FOUND</button>');
     if (notf.length) miss = '<span class="apill-miss" title="' + esc(notf.join(", ")) + '">NOT FOUND: ' +
                             esc(notf.slice(0, 12).join(", ")) + (notf.length > 12 ? " +" + (notf.length - 12) : "") + '</span>';
   } else if (filt.q) push("q", "", '"' + filt.q + '"');
@@ -949,12 +953,13 @@ function apply() {
 }
 
 function stats() {
-  var ct = 0, val = 0;
-  VIEW.forEach(function (p) { ct += p.TOTAL_CT || 0; val += aedOf(p) || 0; });
+  var t = sums(VIEW);
   $("#stats").innerHTML =
     "<b>" + VIEW.length + "</b> " + (VIEW.length === 1 ? "PIECE" : "PIECES") +
-    " &nbsp;&middot;&nbsp; <b>" + ct.toFixed(2) + "</b> CT" +
-    " &nbsp;&middot;&nbsp; <span class='gold'><b>" + aed(val) + "</b></span>";
+    " &nbsp;&middot;&nbsp; <b>" + t.ct.toFixed(2) + "</b> CT" +
+    " &nbsp;&middot;&nbsp; <b>" + t.gw.toFixed(1) + "</b> G" +
+    " &nbsp;&middot;&nbsp; <span class='gold'><b>" + aed(Math.round(t.aed)) + "</b></span>" +
+    (VIEW.length ? "<button class='stat-btn' data-st='sel'>SELECT ALL</button><button class='stat-btn' data-st='exp'>EXPORT</button>" : "");
   $("#empty").hidden = VIEW.length > 0;
 }
 
@@ -1174,8 +1179,9 @@ function tallyData(list) {
     if (cats.indexOf(c) < 0) cats.push(c);
     if (owners.indexOf(o) < 0) owners.push(o);
     var k = o + "|" + c; m[k] = m[k] || { all: 0, inn: 0 }; m[k].all++; if (st !== "SOLD") m[k].inn++;
-    var s = sum[o] = sum[o] || { all: 0, sold: 0, hold: 0, memo: 0, avail: 0, val: 0, soldVal: 0 };
+    var s = sum[o] = sum[o] || { all: 0, sold: 0, hold: 0, memo: 0, avail: 0, val: 0, soldVal: 0, ct: 0, gw: 0, nw: 0 };
     s.all++;
+    if (st !== "SOLD") { s.ct += p.TOTAL_CT || 0; s.gw += p.GROSS_WT_GM || 0; s.nw += p.NET_GOLD_WT_GM || 0; }
     if (st === "SOLD") { s.sold++; s.soldVal += aedOf(p) || 0; }
     else { if (st === "HOLD") s.hold++; else if (st === "MEMO OUT") s.memo++; else s.avail++; s.val += aedOf(p) || 0; }
   });
@@ -1184,20 +1190,29 @@ function tallyData(list) {
   owners.sort(function (a, b) { return (a !== "LEEBA") - (b !== "LEEBA") || (a < b ? -1 : 1); });
   return { cats: cats, owners: owners, m: m, sum: sum };
 }
+var tallyScope = "all";
+function tallyList() {
+  if (tallyScope === "view") return VIEW.slice();
+  if (tallyScope === "sel") return ALL.filter(function (p) { return sel.has(p.SKU); });
+  return ALL.slice();
+}
 function renderTally() {
-  var d = tallyData(ALL), H = [];
-  var tot = { all: 0, sold: 0, hold: 0, memo: 0, avail: 0, val: 0, soldVal: 0 };
+  var list = tallyList(), d = tallyData(list), H = [];
+  $$("#tallyScope .chip").forEach(function (c) { c.classList.toggle("is-on", c.dataset.scope === tallyScope); });
+  var tot = { all: 0, sold: 0, hold: 0, memo: 0, avail: 0, val: 0, soldVal: 0, ct: 0, gw: 0, nw: 0 };
   H.push('<table class="tally-t"><thead><tr><th>OWNER</th><th>TOTAL</th><th>AVAILABLE</th><th>HOLD</th><th>MEMO</th>' +
-         '<th>SOLD</th><th>IN STOCK</th><th>IN-STOCK VALUE</th><th>SOLD VALUE</th></tr></thead><tbody>');
+         '<th>SOLD</th><th>IN STOCK</th><th>DIA CT</th><th>GROSS WT</th><th>NET WT</th><th>IN-STOCK VALUE</th><th>SOLD VALUE</th></tr></thead><tbody>');
   d.owners.forEach(function (o) {
     var s = d.sum[o];
     Object.keys(tot).forEach(function (k) { tot[k] += s[k]; });
     H.push('<tr><td><span class="badge ' + ownerCls(o) + '">' + esc(o) + '</span></td><td>' + s.all + '</td><td>' + s.avail +
            '</td><td>' + s.hold + '</td><td>' + s.memo + '</td><td>' + s.sold + '</td><td><b>' + (s.all - s.sold) +
-           '</b></td><td>' + aed(Math.round(s.val)) + '</td><td>' + aed(Math.round(s.soldVal)) + '</td></tr>');
+           '</b></td><td>' + s.ct.toFixed(2) + '</td><td>' + s.gw.toFixed(2) + '</td><td>' + s.nw.toFixed(2) +
+           '</td><td>' + aed(Math.round(s.val)) + '</td><td>' + aed(Math.round(s.soldVal)) + '</td></tr>');
   });
   H.push('<tr class="tot"><td>ALL</td><td>' + tot.all + '</td><td>' + tot.avail + '</td><td>' + tot.hold + '</td><td>' + tot.memo +
-         '</td><td>' + tot.sold + '</td><td><b>' + (tot.all - tot.sold) + '</b></td><td>' + aed(Math.round(tot.val)) +
+         '</td><td>' + tot.sold + '</td><td><b>' + (tot.all - tot.sold) + '</b></td><td>' + tot.ct.toFixed(2) +
+         '</td><td>' + tot.gw.toFixed(2) + '</td><td>' + tot.nw.toFixed(2) + '</td><td>' + aed(Math.round(tot.val)) +
          '</td><td>' + aed(Math.round(tot.soldVal)) + '</td></tr></tbody></table>');
   H.push('<h4>IN STOCK BY CATEGORY <small>(pieces not sold)</small></h4><table class="tally-t"><thead><tr><th>OWNER</th>');
   d.cats.forEach(function (c) { H.push('<th>' + esc(c) + '</th>'); });
@@ -1215,20 +1230,29 @@ function renderTally() {
   d.cats.forEach(function (c) { H.push('<td>' + (colTot[c] || 0) + '</td>'); });
   H.push('<td><b>' + grand + '</b></td></tr></tbody></table>');
   $("#tallyBody").innerHTML = H.join("");
-  $("#tallyWhen").textContent = "Live status - " + new Date().toLocaleString("en-GB", { timeZone: "Asia/Dubai" }) + " (Dubai)";
+  if (!list.length) $("#tallyBody").innerHTML = '<p class="empty">Nothing in this list.</p>';
+  $("#tallyWhen").textContent = list.length + " pieces - live status " + new Date().toLocaleString("en-GB", { timeZone: "Asia/Dubai" }) + " (Dubai)";
 }
 function openTally() {
   if (!$("#tally")) {
     var el = document.createElement("div");
     el.className = "modal"; el.id = "tally"; el.hidden = true;
     el.innerHTML = '<div class="modal-card tally-card"><button class="modal-x" id="tallyX" title="Close">&times;</button>' +
-      '<div class="tally-head"><h3>STOCK TALLY</h3><span id="tallyWhen"></span></div>' +
+      '<div class="tally-head"><h3>STOCK TALLY</h3><span id="tallyWhen"></span>' +
+      '<div class="chips tally-scope" id="tallyScope"><button class="chip" data-scope="all">ALL STOCK</button>' +
+      '<button class="chip" data-scope="view">CURRENT LIST</button><button class="chip" data-scope="sel">SELECTED</button></div></div>' +
       '<div class="tally-scroll" id="tallyBody"></div>' +
       '<div class="tally-foot"><button class="btn btn-gold" id="tallyExp">EXPORT TALLY + FULL LIST</button></div></div>';
     document.body.appendChild(el);
     $("#tallyX").addEventListener("click", function () { el.hidden = true; });
     el.addEventListener("click", function (e) { if (e.target === el) el.hidden = true; });
-    $("#tallyExp").addEventListener("click", function () { exportRows(ALL.slice(), "stock-tally"); });
+    $("#tallyExp").addEventListener("click", function () {
+      exportRows(tallyList(), "stock-tally", { owner: true, photos: false, price: true });
+    });
+    $("#tallyScope").addEventListener("click", function (e) {
+      var c = e.target.closest(".chip"); if (!c) return;
+      tallyScope = c.dataset.scope; renderTally();
+    });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") el.hidden = true; });
   }
   renderTally(); $("#tally").hidden = false;
@@ -1238,13 +1262,15 @@ function tallySheet(wb, list) {
   ws.addRow(["STOCK TALLY - " + SHOW_NAME]);
   ws.addRow([list.length + " pieces - " + new Date().toLocaleString("en-GB", { timeZone: "Asia/Dubai" }) + " (Dubai)"]);
   ws.addRow([]);
-  ws.addRow(["OWNER", "TOTAL", "AVAILABLE", "HOLD", "MEMO OUT", "SOLD", "IN STOCK", "IN-STOCK VALUE (AED)", "SOLD VALUE (AED)"]);
+  ws.addRow(["OWNER", "TOTAL", "AVAILABLE", "HOLD", "MEMO OUT", "SOLD", "IN STOCK", "IN-STOCK DIA CT",
+             "IN-STOCK GROSS WT (g)", "IN-STOCK NET WT (g)", "IN-STOCK VALUE (AED)", "SOLD VALUE (AED)"]);
   d.owners.forEach(function (o) {
     var s = d.sum[o];
-    ws.addRow([o, s.all, s.avail, s.hold, s.memo, s.sold, s.all - s.sold, Math.round(s.val), Math.round(s.soldVal)]);
+    ws.addRow([o, s.all, s.avail, s.hold, s.memo, s.sold, s.all - s.sold, +s.ct.toFixed(2), +s.gw.toFixed(2),
+               +s.nw.toFixed(2), Math.round(s.val), Math.round(s.soldVal)]);
   });
   var n = d.owners.length, r0 = 5, r1 = 4 + n;
-  var tr = ws.addRow(["ALL"].concat(["B", "C", "D", "E", "F", "G", "H", "I"].map(function (c) {
+  var tr = ws.addRow(["ALL"].concat(["B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"].map(function (c) {
     return { formula: "SUM(" + c + r0 + ":" + c + r1 + ")" };
   })));
   tr.font = { bold: true, name: "Arial" };
@@ -1266,91 +1292,279 @@ function tallySheet(wb, list) {
   }
   t2.font = { bold: true, name: "Arial" };
   ws.getCell("A1").font = { bold: true, size: 13, name: "Arial", color: { argb: "FF0F4040" } };
-  [8, 9].forEach(function (c) { ws.getColumn(c).numFmt = "#,##0"; });
+  [11, 12].forEach(function (c) { ws.getColumn(c).numFmt = "#,##0"; });
+  [8, 9, 10].forEach(function (c) { ws.getColumn(c).numFmt = "0.00"; });
   return ws;
 }
 
 /* ------------------------------------------------------------ export */
-function exportRows(picked, label) {
-  if (!picked.length) { toast("Nothing selected"); return; }
-  if (typeof ExcelJS === "undefined") { exportCsv(picked); return; }
+/* Excel in the live.leeba.co / LEEBA app layout: a "LEEBA Collection" sheet with
+   barcode, DNA link, photo, gold and diamond summary and price, and a
+   "Diamond Details" sheet with each piece's stone lines (the "See Details" link
+   on every row jumps to that piece's block). Photos are shrunk in the browser
+   before they go in, so a few hundred pieces still make a file that emails. */
+var EXP = null;
+function openExport(list, label) {
+  if (!list.length) { toast("Nothing selected"); return; }
+  EXP = { list: list, label: label };
+  var t = sums(list);
+  $("#expWhat").innerHTML = "<b>" + list.length + "</b> " + (list.length === 1 ? "piece" : "pieces") +
+    (label === "selection" ? " selected" : " showing") + " &middot; " + t.ct.toFixed(2) + " ct &middot; " +
+    aed(Math.round(t.aed)) + (list.length > 300 ? "<br>Large list: with photos this takes a minute." : "");
+  $("#exCostRow").hidden = !cost;
+  $("#exCost").checked = false;
+  $("#expProg").hidden = true;
+  $("#expGo").disabled = false;
+  $("#expDlg").hidden = false;
+}
 
-  var wb = new ExcelJS.Workbook();
-  wb.creator = "LEEBA Jewels";
+function title(s) {
+  return String(s || "").toLowerCase().replace(/(^|[\s\/-])([a-z])/g, function (m, a, b) { return a + b.toUpperCase(); });
+}
+function pageLink(p) {
+  return location.origin + location.pathname + "?sku=" + encodeURIComponent(p.SKU);
+}
+function stoneLines(p) {
+  var lines = p.DIAMONDS || [];
+  var brk = lines.filter(function (x) { return x.DETAIL_SET === "STONE BREAKDOWN"; });
+  return brk.length ? brk : lines;
+}
 
-  var head = ["SR", "SKU", "CATEGORY", "DESCRIPTION", "PURITY", "TONE", "SIZE",
-              "GROSS WT (gm)", "NET GOLD (gm)", "CENTRE CT", "SIDE CT", "TOTAL CT", "PCS",
-              "CENTRE STONE", "QUALITY", "SHAPES", "CERT", "AVAILABILITY",
-              "SELLING PRICE (AED)", "SELLING PRICE (USD)", "PER CARAT (AED)", "OFFER", "NORMAL PRICE (AED)"];
-  if (HAS_LOC) head.splice(2, 0, "TRAY");
-  var withOwner = !!staff;
-  if (withOwner) head.splice(2, 0, "OWNER");
-  head.push("BARCODE", "PHOTO");
-  if (cost) head = head.concat(["COST (USD)", "MARKUP"]);
-
-  var s1 = wb.addWorksheet("COLLECTION");
-  s1.addRow([SHOW_NAME]);
-  s1.addRow([picked.length + " pieces - exported " + new Date().toLocaleString("en-GB")]);
-  s1.addRow([]);
-  s1.addRow(head);
-  picked.forEach(function (p, i) {
-    var row = [i + 1, p.SKU, p.CATEGORY, p.DESCRIPTION || "",
-      p.METAL_KT ? p.METAL_KT + "K" : "", p.METAL_COLOR || "", p.SIZE || "",
-      p.GROSS_WT_GM || "", p.NET_GOLD_WT_GM || "", p.CENTER_CT || "", p.SIDE_CT || "",
-      p.TOTAL_CT || "", pcsOf(p) || "",
-      p.CENTER_STONE_CT ? [num(p.CENTER_STONE_CT) + " ct", p.CENTER_SHAPE, p.CENTER_COLOR, p.CENTER_CLARITY]
-        .filter(Boolean).join(" ") : "",
-      p.QUALITY || "", p.SHAPES || "", p.CENTER_CERT || p.CERT || "", availOf(p),
-      aedOf(p) || "ON REQUEST", sellOf(p) || "", p.SELL_PER_CT_USD ? Math.round(p.SELL_PER_CT_USD * RATE) : "",
-      offerOf(p), wasAED(p) || ""];
-    if (HAS_LOC) row.splice(2, 0, p.TRAY || "");
-    if (withOwner) row.splice(2, 0, ownerOf(p));
-    var ph = firstPhoto(p);
-    row.push(p.BARCODE || p.SKU, ph ? { text: "photo", hyperlink: new URL(srcFor(ph), location.href).href } : "");
-    if (cost) {
-      var c = cost[p.SKU] || {};
-      row = row.concat([c.cost || "", c.markup || ""]);
-    }
-    s1.addRow(row);
-  });
-
-  var s2 = wb.addWorksheet("DIAMOND DETAILS");
-  s2.addRow(["SKU", "ROLE", "SHAPE", "PCS", "CARAT", "MM / SIEVE", "COLOUR", "CLARITY", "PACKET", "CERT", "NOTE"]);
-  picked.forEach(function (p) {
-    var lines = p.DIAMONDS || [];
-    var brk = lines.filter(function (x) { return x.DETAIL_SET === "STONE BREAKDOWN"; });
-    (brk.length ? brk : lines).forEach(function (d) {
-      s2.addRow([p.SKU, d.STONE_ROLE || "", d.SHAPE || "", d.PCS || "", d.CARAT || "",
-                 d.MM_SIEVE || "", d.COLOR || "", d.CLARITY || "", d.PACKET_NO || "",
-                 d.CERT_NO || "", d.NOTE || ""]);
-    });
-  });
-
-  var sheets = [[s1, 4], [s2, 1]];
-  if (withOwner) { var s3 = tallySheet(wb, picked); sheets.push([s3, 4]); }
-  sheets.forEach(function (pair) {
-    var ws = pair[0], hr = pair[1];
-    ws.getRow(hr).eachCell(function (c) {
-      c.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10, name: "Arial" };
-      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F4040" } };
-      c.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-    });
-    ws.views = [{ state: "frozen", ySplit: hr }];
-    ws.columns.forEach(function (col) {
-      var w = 10;
-      col.eachCell({ includeEmpty: false }, function (c) {
-        w = Math.max(w, Math.min(38, String(c.value === null || c.value === undefined ? "" : c.value).length + 3));
+/* one photo as a small JPEG for the sheet - tries each file name the card would */
+function photoJpeg(p, px) {
+  var tries = (PHOTO_OK[p.SKU] ? [PHOTO_OK[p.SKU]] : []).concat(photoTries(p)).slice(0, 6);
+  var i = 0;
+  function next() {
+    if (i >= tries.length) return Promise.resolve(null);
+    var f = tries[i++];
+    return fetch(srcFor(f)).then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      return r.blob();
+    }).then(function (blob) {
+      return new Promise(function (ok, bad) {
+        var u = URL.createObjectURL(blob), im = new Image();
+        im.onload = function () {
+          var s = Math.min(1, px / Math.max(im.naturalWidth, im.naturalHeight));
+          var c = document.createElement("canvas");
+          c.width = Math.round(im.naturalWidth * s); c.height = Math.round(im.naturalHeight * s);
+          var g = c.getContext("2d");
+          g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+          g.drawImage(im, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(u);
+          try { ok({ b64: c.toDataURL("image/jpeg", 0.82).split(",")[1], w: c.width, h: c.height }); }
+          catch (e) { bad(e); }
+        };
+        im.onerror = function () { URL.revokeObjectURL(u); bad(new Error("decode")); };
+        im.src = u;
       });
-      col.width = w;
-      col.font = { name: "Arial", size: 10 };
-    });
-  });
-  s1.getCell("A1").font = { bold: true, size: 13, name: "Arial", color: { argb: "FF0F4040" } };
+    }).catch(next);
+  }
+  return next();
+}
+function photosFor(list, onStep) {
+  var out = new Array(list.length), k = 0, done = 0;
+  function worker() {
+    if (k >= list.length) return Promise.resolve();
+    var i = k++;
+    return photoJpeg(list[i], 220).then(function (r) { out[i] = r; onStep(++done); }, function () { onStep(++done); })
+      .then(worker);
+  }
+  var ws = [];
+  for (var n = 0; n < 6; n++) ws.push(worker());
+  return Promise.all(ws).then(function () { return out; });
+}
 
-  wb.xlsx.writeBuffer().then(function (buf) {
-    download(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-             "LEEBA-" + TAG + "-" + label + "-" + new Date().toISOString().slice(0, 10) + ".xlsx");
-    toast("Exported " + picked.length + " pieces");
+function exportRows(picked, label, opts) {
+  opts = opts || {};
+  if (!picked.length) { toast("Nothing selected"); return Promise.resolve(); }
+  if (typeof ExcelJS === "undefined") { exportCsv(picked); return Promise.resolve(); }
+  var prog = $("#expProg");
+  var photoStep = opts.photos ? photosFor(picked, function (d) {
+    prog.hidden = false; prog.textContent = "Adding photos " + d + " / " + picked.length + "...";
+  }) : Promise.resolve([]);
+
+  return photoStep.then(function (photos) {
+    prog.hidden = false; prog.textContent = "Building the sheet...";
+    var wb = new ExcelJS.Workbook();
+    wb.creator = "LEEBA Jewels";
+    var TEAL = "FF2BADA5", TEAL_D = "FF1A7A6E", GOLD_L = "FFF7EFDC", LINE = "FFD5DDDC";
+    var thin = { style: "thin", color: { argb: LINE } };
+    var box = { top: thin, left: thin, bottom: thin, right: thin };
+    var today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+
+    /* ---- columns: [header, width, value(p, i), kind] */
+    var C = [
+      ["#", 5, function (p, i) { return i + 1; }],
+      ["SKU", 14, function (p) { return p.BARCODE || p.SKU; }],
+      ["DNA", 7, function (p) { return { text: "DNA", hyperlink: pageLink(p) }; }, "link"]
+    ];
+    if (opts.photos) C.push(["Image", 14, function () { return ""; }, "img"]);
+    C.push(
+      ["Description", 40, function (p) { return p.DESCRIPTION || ""; }, "wrap"],
+      ["Category", 13, function (p) { return title(p.CATEGORY); }],
+      ["Metal\nPurity", 9, function (p) { return p.METAL_KT ? p.METAL_KT + "KT" : ""; }],
+      ["Metal\nTone", 9, function (p) { return title(p.METAL_COLOR); }],
+      ["Gross Wgt\n(g)", 11, function (p) { return p.GROSS_WT_GM || ""; }, "g"],
+      ["Net Wgt\n(g)", 11, function (p) { return p.NET_GOLD_WT_GM || ""; }, "g"],
+      ["Dia Wgt\n(ct)", 11, function (p) { return p.TOTAL_CT || ""; }, "ct"],
+      ["Dia Pcs", 8, function (p) { return pcsOf(p) || ""; }, "n"],
+      ["Diamond\nQuality", 13, function (p) { return p.QUALITY || ""; }],
+      ["Shapes", 14, function (p) { return title(p.SHAPES); }, "wrap"]
+    );
+    if (opts.owner) C.push(["Owner", 13, function (p) { return ownerOf(p); }]);
+    if (opts.owner || label === "stock-tally") C.push(["Status", 11, function (p) { return availOf(p); }]);
+    if (opts.price) C.push(
+      ["Price\n(AED)", 13, function (p) { return aedOf(p) || "On request"; }, "aed"],
+      ["Price\n(USD)", 12, function (p) { return sellOf(p) ? Math.round(sellOf(p)) : ""; }, "usd"]
+    );
+    if (opts.cost) C.push(
+      ["Cost\n(USD)", 11, function (p) { return (cost[p.SKU] || {}).cost || ""; }, "usd"],
+      ["Markup", 8, function (p) { return (cost[p.SKU] || {}).markup || ""; }]
+    );
+    C.push(["Diamond\nDetails", 15, null, "det"]);
+    var NC = C.length, lastCol = String.fromCharCode(64 + NC);
+
+    var ws = wb.addWorksheet("LEEBA Collection", { views: [{ state: "frozen", ySplit: 3 }] });
+
+    /* ---- Diamond Details filled first, so each block's row is known */
+    var dd = wb.addWorksheet("Diamond Details");
+    dd.columns = [{ width: 14 }, { width: 8 }, { width: 11 }, { width: 13 }, { width: 10 }, { width: 11 }, { width: 18 }];
+    dd.mergeCells("A1:G1");
+    dd.getCell("A1").value = "LEEBA JEWELS  —  Diamond Details";
+    dd.getCell("A1").font = { name: "Calibri", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+    dd.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: TEAL_D } };
+    dd.getRow(1).height = 26;
+    var at = {}, r = 3;
+    picked.forEach(function (p) {
+      at[p.SKU] = r;
+      dd.mergeCells("A" + r + ":G" + r);
+      var h = dd.getCell("A" + r);
+      h.value = (p.BARCODE || p.SKU) + "   —   " + (p.DESCRIPTION || title(p.CATEGORY)) +
+        "   [" + [p.METAL_KT ? p.METAL_KT + "KT" : "", title(p.METAL_COLOR)].filter(Boolean).join(" / ") + "]";
+      h.font = { name: "Calibri", bold: true, size: 11, color: { argb: "FF0F4040" } };
+      h.fill = { type: "pattern", pattern: "solid", fgColor: { argb: GOLD_L } };
+      r++;
+      var hr = dd.getRow(r);
+      hr.values = ["Shape", "Pcs", "Wgt (ct)", "Size (avg ct)", "Color", "Clarity", "Certi No"];
+      hr.eachCell(function (c) {
+        c.font = { name: "Calibri", bold: true, color: { argb: "FFFFFFFF" } };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TEAL } };
+        c.alignment = { horizontal: "center" }; c.border = box;
+      });
+      r++;
+      var one = shapesOf(p).length === 1 ? shapesOf(p)[0] : "";
+      var tp = 0, tc = 0, ls = stoneLines(p);
+      ls.forEach(function (d) {
+        var pcs = d.PCS || "", ct = d.CARAT || "";
+        tp += d.PCS || 0; tc += d.CARAT || 0;
+        var row = dd.getRow(r++);
+        row.values = [title(d.SHAPE || (d.STONE_ROLE === "CENTER" ? p.CENTER_SHAPE : "") || one), pcs, ct,
+          d.AVG_CT || (d.PCS && d.CARAT ? +(d.CARAT / d.PCS).toFixed(3) : ""),
+          d.COLOR || "", d.CLARITY || "", d.CERT_NO || (d.STONE_ROLE === "CENTER" ? p.CENTER_CERT || "" : "")];
+        row.eachCell({ includeEmpty: true }, function (c) { c.border = box; c.font = { name: "Calibri" }; });
+      });
+      if (!ls.length) {
+        var e = dd.getRow(r++); e.values = ["—", "", "", "", "", "", ""];
+        e.eachCell({ includeEmpty: true }, function (c) { c.border = box; });
+      }
+      var tr = dd.getRow(r++);
+      tr.values = ["TOTAL", tp || pcsOf(p) || "", +(tc || p.TOTAL_CT || 0).toFixed(3) || "", "", "", "", ""];
+      tr.eachCell({ includeEmpty: true }, function (c) {
+        c.font = { name: "Calibri", bold: true }; c.border = box;
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE6F4F3" } };
+      });
+      r++;
+    });
+    dd.getColumn(3).numFmt = "0.00#"; dd.getColumn(4).numFmt = "0.000";
+
+    /* ---- main sheet */
+    ws.columns = C.map(function (c) { return { width: c[1] }; });
+    ws.mergeCells("A1:" + lastCol + "1"); ws.mergeCells("A2:" + lastCol + "2");
+    ws.getCell("A1").value = "LEEBA JEWELS  —  " + SHOW_NAME.replace(/^LEEBA Jewels\s*-\s*/i, "");
+    ws.getCell("A1").font = { name: "Calibri", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+    ws.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: TEAL_D } };
+    ws.getCell("A1").alignment = { vertical: "middle", horizontal: "center" };
+    ws.getCell("A2").value = "+91 9979460555  |  info@leeba.co  |  www.leeba.co  |  " + today + "  |  " +
+      picked.length + " Products";
+    ws.getCell("A2").font = { name: "Calibri", size: 10, italic: true, color: { argb: "FF1A6B6B" } };
+    ws.getCell("A2").alignment = { horizontal: "center" };
+    ws.getRow(1).height = 28; ws.getRow(2).height = 18;
+    var hr = ws.getRow(3);
+    hr.values = C.map(function (c) { return c[0]; });
+    hr.height = 34;
+    hr.eachCell(function (c) {
+      c.font = { name: "Calibri", bold: true, color: { argb: "FFFFFFFF" } };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TEAL } };
+      c.alignment = { vertical: "middle", horizontal: "center", wrapText: true }; c.border = box;
+    });
+
+    var imgCol = C.findIndex(function (c) { return c[3] === "img"; });
+    picked.forEach(function (p, i) {
+      var rn = 4 + i, row = ws.getRow(rn);
+      C.forEach(function (c, j) {
+        var cell = row.getCell(j + 1);
+        cell.value = c[3] === "det" ? { text: "See Details ↓", hyperlink: "#'Diamond Details'!A" + at[p.SKU] } : c[2](p, i);
+        cell.font = { name: "Calibri", size: 11 };
+        if (c[3] === "link" || c[3] === "det") cell.font = { name: "Calibri", size: 11, underline: true, color: { argb: "FF1A6B6B" } };
+        cell.alignment = { vertical: "middle", horizontal: c[3] === "wrap" ? "left" : "center", wrapText: c[3] === "wrap" };
+        cell.border = box;
+        if (c[3] === "g") cell.numFmt = "0.00";
+        if (c[3] === "ct") cell.numFmt = "0.00";
+        if (c[3] === "aed" || c[3] === "usd") cell.numFmt = "#,##0";
+      });
+      row.height = opts.photos ? 70 : 20;
+      var ph = photos[i];
+      if (ph && imgCol >= 0) {
+        var id = wb.addImage({ base64: ph.b64, extension: "jpeg" });
+        var sc = Math.min(95 / ph.w, 88 / ph.h);
+        ws.addImage(id, { tl: { col: imgCol + 0.05, row: rn - 1 + 0.05 }, ext: { width: ph.w * sc, height: ph.h * sc }, editAs: "oneCell" });
+      }
+    });
+
+    /* totals */
+    var last = 3 + picked.length, t = sums(picked);
+    var tr = ws.getRow(last + 1);
+    tr.getCell(2).value = "TOTAL — " + picked.length + " items";
+    C.forEach(function (c, j) {
+      var L = String.fromCharCode(65 + j), v = null;
+      if (c[3] === "g") v = c[0].indexOf("Gross") === 0 ? t.gw : t.nw;
+      else if (c[3] === "ct") v = t.ct;
+      else if (c[3] === "n") v = t.pcs;
+      else if (c[3] === "aed") v = Math.round(t.aed);
+      else if (c[3] === "usd" && c[0].indexOf("Price") === 0) v = Math.round(t.usd);
+      if (v !== null) {
+        tr.getCell(j + 1).value = { formula: "SUM(" + L + "4:" + L + last + ")", result: v };
+        tr.getCell(j + 1).numFmt = c[3] === "n" ? "0" : (c[3] === "aed" || c[3] === "usd") ? "#,##0" : "0.00";
+      }
+    });
+    tr.height = 22;
+    for (var j = 1; j <= NC; j++) {
+      var cc = tr.getCell(j);
+      cc.font = { name: "Calibri", bold: true, color: { argb: "FF0F4040" } };
+      cc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: GOLD_L } };
+      cc.alignment = { vertical: "middle", horizontal: "center" }; cc.border = box;
+    }
+
+    if (opts.owner) {
+      var s3 = tallySheet(wb, picked);
+      s3.getRow(4).eachCell(function (c) {
+        c.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Calibri" };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TEAL } };
+        c.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      });
+      s3.getColumn(1).width = 30;
+      for (var k = 2; k <= 12; k++) s3.getColumn(k).width = 13;
+    }
+
+    return wb.xlsx.writeBuffer().then(function (buf) {
+      download(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+               "LEEBA-" + TAG + "-" + label + "-" + picked.length + "pcs-" + new Date().toISOString().slice(0, 10) + ".xlsx");
+      prog.hidden = true;
+      toast("Exported " + picked.length + " pieces");
+    });
+  }).catch(function (e) {
+    prog.hidden = false; prog.textContent = "Export failed: " + (e && e.message || e);
+    throw e;
   });
 }
 
@@ -1670,12 +1884,35 @@ function openStaff() {
   if (!staff) setTimeout(function () { $("#staffCode").focus(); }, 30);
 }
 
+/* totals of a list of pieces - used by the selection bar and the header */
+function sums(list) {
+  var t = { n: list.length, aed: 0, usd: 0, ct: 0, pcs: 0, gw: 0, nw: 0, own: {} };
+  list.forEach(function (p) {
+    t.aed += aedOf(p) || 0; t.usd += sellOf(p) || 0;
+    t.ct += p.TOTAL_CT || 0; t.pcs += pcsOf(p) || 0;
+    t.gw += p.GROSS_WT_GM || 0; t.nw += p.NET_GOLD_WT_GM || 0;
+    var o = ownerOf(p); t.own[o] = (t.own[o] || 0) + 1;
+  });
+  return t;
+}
 function selbar() {
   $("#selN").textContent = sel.size;
-  var v = 0;
-  ALL.forEach(function (p) { if (sel.has(p.SKU)) v += aedOf(p) || 0; });
-  $("#selVal").textContent = aed(v);
+  var t = sums(ALL.filter(function (p) { return sel.has(p.SKU); }));
+  function f(label, val, cls) { return '<span class="sf-i' + (cls ? " " + cls : "") + '"><span>' + label + '</span><b>' + val + '</b></span>'; }
+  var owners = Object.keys(t.own);
+  $("#selFacts").innerHTML =
+    f("VALUE", aed(Math.round(t.aed)) + ' <small>' + money(Math.round(t.usd)) + '</small>', "sf-val") +
+    f("DIA CT", t.ct.toFixed(2)) +
+    f("DIA PCS", t.pcs || "&ndash;") +
+    f("GROSS WT", t.gw.toFixed(2) + " g") +
+    f("NET WT", t.nw.toFixed(2) + " g") +
+    f("OWNER", owners.map(function (o) { return esc(o) + " " + t.own[o]; }).join(" &middot; "), "sf-own");
   $("#selbar").hidden = sel.size === 0;
+}
+function selectList(list) {
+  list.forEach(function (p) { sel.add(p.SKU); });
+  $$(".card").forEach(function (c) { if (sel.has(c.dataset.sku)) c.classList.add("is-sel"); });
+  selbar(); toast(sel.size + " selected");
 }
 
 function wire() {
@@ -1724,6 +1961,7 @@ function wire() {
     var b = e.target.closest(".apill"); if (!b) return;
     var kind = b.dataset.kind;
     if (kind === "all") { clearAll(); return; }
+    if (kind === "selview") { selectList(VIEW); return; }
     if (filt[kind] instanceof Set) filt[kind].delete(b.dataset.val);
     else if (kind === "price") { filt.prMin = filt.prMax = null; }
     else if (kind === "ct")    { filt.ctMin = filt.ctMax = null; }
@@ -1772,14 +2010,23 @@ function wire() {
     selbar();
   });
   $("#selExport").addEventListener("click", function () {
-    exportRows(ALL.filter(function (p) { return sel.has(p.SKU); }), "selection");
+    openExport(ALL.filter(function (p) { return sel.has(p.SKU); }), "selection");
   });
-  $("#selAll").addEventListener("click", function () {
-    VIEW.forEach(function (p) { sel.add(p.SKU); });
-    $$(".card").forEach(function (c) { c.classList.add("is-sel"); });
-    selbar(); toast(sel.size + " selected");
+  $("#selAll").addEventListener("click", function () { selectList(VIEW); });
+  $("#expAll").addEventListener("click", function () { openExport(VIEW.slice(), "list"); });
+  $("#stats").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-st]"); if (!b) return;
+    if (b.dataset.st === "sel") selectList(VIEW); else openExport(VIEW.slice(), "list");
   });
-  $("#expAll").addEventListener("click", function () { exportRows(VIEW.slice(), "list"); });
+  $("#expGo").addEventListener("click", function () {
+    if (!EXP) return;
+    var go = this; go.disabled = true;
+    exportRows(EXP.list, EXP.label, {
+      photos: $("#exPhotos").checked, price: $("#exPrice").checked,
+      owner: $("#exOwner").checked, cost: !!cost && $("#exCost").checked
+    }).then(function () { go.disabled = false; $("#expDlg").hidden = true; $("#expProg").hidden = true; },
+            function () { go.disabled = false; });
+  });
 
   // detail
   $("#dImg").addEventListener("click", function () {

@@ -6,7 +6,7 @@
 <title>LEEBA — Jewellery &amp; Watch Show Abu Dhabi</title>
 <meta name="robots" content="noindex,nofollow">
 <link rel="preconnect" href="https://wsrv.nl" crossorigin>
-<link rel="stylesheet" href="assets/shows.css?v=202611121959">
+<link rel="stylesheet" href="assets/shows.css?v=202611122330">
 </head>
 <body>
 
@@ -31,7 +31,7 @@
         <button id="vList" class="vt" title="List view">&#9776;</button>
       </div>
       <button id="staffBtn" class="btn btn-lock" title="Staff sign-in" hidden>&#128274;<span>STAFF</span></button>
-      <button id="tallyBtn" class="btn btn-ghost btn-tally staff-only" title="Stock tally by owner and category">TALLY</button>
+      <button id="tallyBtn" class="btn btn-ghost btn-tally" title="Stock tally by owner and category">TALLY</button>
       <button id="salesBtn" class="btn btn-gold btn-sales" title="Sales and today's tally" hidden>SALES<b hidden></b></button>
     </div>
   </div>
@@ -79,7 +79,7 @@
     </div>
 
     <div class="side-body">
-      <div class="f staff-only"><label>OWNER</label><div class="chips wrap" id="fOwner"></div></div>
+      <div class="f"><label>OWNER</label><div class="chips wrap" id="fOwner"></div></div>
       <div class="f"><label>CATEGORY</label><div class="chips wrap" id="fCat"></div></div>
       <div class="f"><label>DISPLAY TRAY</label><div class="chips wrap" id="fLoc"></div></div>
       <div class="f"><label>METAL COLOUR</label><div class="chips wrap" id="fTone"></div></div>
@@ -124,8 +124,8 @@
 
       <div class="side-actions">
         <button id="selAll" class="btn btn-ghost wide">SELECT ALL SHOWING</button>
-        <button id="expAll" class="btn btn-ghost wide">EXPORT ALL SHOWING</button>
-        <p class="side-note">Availability is saved on this device only. Export a selection to share it.</p>
+        <button id="expAll" class="btn btn-ghost wide">EXPORT ALL SHOWING TO EXCEL</button>
+        <p class="side-note">Tip: paste a column of barcodes from Excel into the search box, then SELECT ALL to pick them in one go.</p>
       </div>
     </div>
 
@@ -145,10 +145,28 @@
 </div>
 
 <div class="selbar" id="selbar" hidden>
-  <span class="selbar-count"><b id="selN">0</b> SELECTED &middot; <span id="selVal"></span></span>
+  <div class="selbar-info">
+    <span class="selbar-count"><b id="selN">0</b> SELECTED</span>
+    <div class="selbar-facts" id="selFacts"></div>
+  </div>
   <div class="selbar-actions">
     <button id="selClear" class="btn btn-ghost">CLEAR</button>
-    <button id="selExport" class="btn btn-gold">EXPORT</button>
+    <button id="selExport" class="btn btn-gold">EXPORT EXCEL</button>
+  </div>
+</div>
+
+<!-- ============================================================ export -->
+<div class="modal" id="expDlg" hidden>
+  <div class="modal-card unlock-card exp-card">
+    <button class="icon-btn modal-x" data-close>&times;</button>
+    <h2 class="u-title">EXPORT TO EXCEL</h2>
+    <p class="u-note" id="expWhat"></p>
+    <label class="u-keep"><input type="checkbox" id="exPhotos" checked> Photos in the sheet</label>
+    <label class="u-keep"><input type="checkbox" id="exPrice" checked> Selling price (AED + USD)</label>
+    <label class="u-keep"><input type="checkbox" id="exOwner"> Owner column + owner tally sheet <em>(internal)</em></label>
+    <label class="u-keep" id="exCostRow" hidden><input type="checkbox" id="exCost"> Cost + markup <em>(internal)</em></label>
+    <p class="exp-prog" id="expProg" hidden></p>
+    <button class="btn btn-gold wide" id="expGo">DOWNLOAD EXCEL</button>
   </div>
 </div>
 
@@ -301,8 +319,8 @@
 
 <!-- shipped with the site so exports still work when the hall wifi drops -->
 <script src="assets/exceljs.min.js"></script>
-<script src="config.js?v=202611121959"></script>
-<script src="assets/shows.js?v=202611121959"></script>
+<script src="config.js?v=202611122330"></script>
+<script src="assets/shows.js?v=202611122330"></script>
 
 </body>
 </html>
