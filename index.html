@@ -6,7 +6,7 @@
 <title>LEEBA — Jewellery &amp; Watch Show Abu Dhabi</title>
 <meta name="robots" content="noindex,nofollow">
 <link rel="preconnect" href="https://wsrv.nl" crossorigin>
-<link rel="stylesheet" href="assets/shows.css?v=202611111750">
+<link rel="stylesheet" href="assets/shows.css?v=202611121959">
 </head>
 <body>
 
@@ -20,7 +20,7 @@
 
     <div class="search">
       <span class="search-ico" aria-hidden="true">&#9906;</span>
-      <input id="q" type="search" placeholder="Search SKU, tray, description, shape&hellip;" autocomplete="off" spellcheck="false">
+      <input id="q" type="search" placeholder="Search, or paste several barcodes&hellip;" autocomplete="off" spellcheck="false">
       <button id="qClear" class="icon-btn search-x" title="Clear" hidden>&times;</button>
     </div>
 
@@ -31,6 +31,7 @@
         <button id="vList" class="vt" title="List view">&#9776;</button>
       </div>
       <button id="staffBtn" class="btn btn-lock" title="Staff sign-in" hidden>&#128274;<span>STAFF</span></button>
+      <button id="tallyBtn" class="btn btn-ghost btn-tally staff-only" title="Stock tally by owner and category">TALLY</button>
       <button id="salesBtn" class="btn btn-gold btn-sales" title="Sales and today's tally" hidden>SALES<b hidden></b></button>
     </div>
   </div>
@@ -78,6 +79,7 @@
     </div>
 
     <div class="side-body">
+      <div class="f staff-only"><label>OWNER</label><div class="chips wrap" id="fOwner"></div></div>
       <div class="f"><label>CATEGORY</label><div class="chips wrap" id="fCat"></div></div>
       <div class="f"><label>DISPLAY TRAY</label><div class="chips wrap" id="fLoc"></div></div>
       <div class="f"><label>METAL COLOUR</label><div class="chips wrap" id="fTone"></div></div>
@@ -299,8 +301,8 @@
 
 <!-- shipped with the site so exports still work when the hall wifi drops -->
 <script src="assets/exceljs.min.js"></script>
-<script src="config.js?v=202611111750"></script>
-<script src="assets/shows.js?v=202611111750"></script>
+<script src="config.js?v=202611121959"></script>
+<script src="assets/shows.js?v=202611121959"></script>
 
 </body>
 </html>

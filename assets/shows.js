@@ -52,7 +52,7 @@ function blank() {
     purities: new Set(), shapes: new Set(),
     q: "", avail: "", sort: "sku",
     ctMin: null, ctMax: null, prMin: null, prMax: null, gwMin: null, gwMax: null,
-    offer: false
+    offer: false, owners: new Set()
   };
 }
 var filt = blank();
@@ -182,6 +182,14 @@ function costOf(p) { return cost && cost[p.SKU] ? cost[p.SKU] : null; }
 /* What this piece's status is right now. A change made here that the server has
    not confirmed yet wins, so the button responds instantly; then the server's
    answer; then whatever the stock list was built with. */
+/* OWNER: whose piece it is (our stock or a partner's shown on our booth).
+   Shown to signed-in staff only: badge on the card and detail, an OWNER filter,
+   the TALLY panel and an OWNER column in exports. */
+var OWNER_CODE = CFG.OWNER_CODES || { "LEEBA": "LB", "RISING STAR": "RS", "SMITBHAI": "SM", "RUBY": "RB", "PARTH": "PT" };
+function ownerOf(p) { return p.OWNER || "LEEBA"; }
+function ownerCode(o) { return OWNER_CODE[o] || o.slice(0, 2); }
+function ownerCls(o) { return "own-" + ownerCode(o); }
+
 function availOf(p) {
   if (STOCK_ON) {
     var pend = pendingOf(p.SKU);
@@ -295,6 +303,7 @@ function kicked(why) {
     : "Signed out: this staff code is no longer valid.");
 }
 function staffButtons() {
+  document.body.classList.toggle("is-staff", !!staff);
   $("#staffBtn").hidden = !STOCK_ON || !!staff;
   $("#salesBtn").hidden = !STOCK_ON || !staff;
 }
@@ -631,6 +640,10 @@ function buildFilters() {
              ' <b>' + it.n + '</b></button>';
     }).join("");
 
+  var owners = tally(ownerOf);
+  var ownItems = items(owners, function (a, b) { return (a !== "LEEBA") - (b !== "LEEBA") || (a < b ? -1 : a > b ? 1 : 0); });
+  $("#fOwner").innerHTML = chipsHTML(ownItems, "owner", true);
+  $("#fOwner").closest(".f").hidden = Object.keys(owners).length < 2;
   $("#fCat").innerHTML    = chipsHTML(catItems, "cat", true);
   $("#fLoc").innerHTML    = chipsHTML(locItems, "loc", true);
   $("#fTone").innerHTML   = chipsHTML(toneItems, "tone", true);
@@ -638,6 +651,7 @@ function buildFilters() {
   $("#fShape").innerHTML  = chipsHTML(shapeItems, "shape", true);
 
   registerGroup("#catChips", "cat",    "cats");
+  registerGroup("#fOwner",   "owner",  "owners");
   registerGroup("#fCat",     "cat",    "cats");
   registerGroup("#locChips", "loc",    "locs");
   registerGroup("#fLoc",     "loc",    "locs");
@@ -778,7 +792,7 @@ function wireCollScroll() {
 
 /* --------------------------------------------------------- active bar */
 function activeCount() {
-  var n = filt.cats.size + filt.locs.size + filt.tones.size + filt.purities.size + filt.shapes.size;
+  var n = filt.owners.size + filt.cats.size + filt.locs.size + filt.tones.size + filt.purities.size + filt.shapes.size;
   if (filt.q) n++;
   if (filt.avail) n++;
   if (filt.offer) n++;
@@ -794,6 +808,7 @@ function activeBar() {
     bits.push('<button class="apill" data-kind="' + kind + '" data-val="' + esc(val) + '">' +
               esc(label) + ' <span>&times;</span></button>');
   }
+  filt.owners.forEach(function (v) { push("owners", v, "OWNER: " + v); });
   filt.cats.forEach(function (v) { push("cats", v, v); });
   filt.locs.forEach(function (v) { push("locs", v, v); });
   filt.tones.forEach(function (v) { push("tones", v, v); });
@@ -813,12 +828,19 @@ function activeBar() {
   }
   if (filt.avail) push("avail", "", filt.avail);
   if (filt.offer) push("offer", "", "ON SALE");
-  if (filt.q) push("q", "", '"' + filt.q + '"');
+  var bl = filt.q ? barcodeList(filt.q) : null, miss = "";
+  if (bl) {
+    var ix = bcIndex(), uniq = bl.filter(function (x, i) { return bl.indexOf(x) === i; });
+    var notf = uniq.filter(function (x) { return !ix[x]; });
+    push("q", "", uniq.length + " BARCODES (" + (uniq.length - notf.length) + " FOUND)");
+    if (notf.length) miss = '<span class="apill-miss" title="' + esc(notf.join(", ")) + '">NOT FOUND: ' +
+                            esc(notf.slice(0, 12).join(", ")) + (notf.length > 12 ? " +" + (notf.length - 12) : "") + '</span>';
+  } else if (filt.q) push("q", "", '"' + filt.q + '"');
 
   var bar = $("#activeBar");
   if (!bits.length) { bar.hidden = true; bar.innerHTML = ""; return; }
   bar.hidden = false;
-  bar.innerHTML = bits.join("") + '<button class="apill apill-clear" data-kind="all">CLEAR ALL</button>';
+  bar.innerHTML = bits.join("") + miss + '<button class="apill apill-clear" data-kind="all">CLEAR ALL</button>';
 }
 
 function clearAll() {
@@ -839,10 +861,43 @@ function syncInputs() {
 }
 
 /* ---------------------------------------------------- filter + sort */
+/* Pasting several barcodes (separated by new lines, commas, spaces or tabs) shows
+   exactly those pieces, in the pasted order, with a note of any not found. */
+function barcodeList(q) {
+  var toks = q.split(/[\s,;]+/).map(function (x) { return x.trim().toUpperCase(); }).filter(Boolean);
+  if (toks.length < 2) return null;
+  var idx = bcIndex(), hits = toks.filter(function (x) { return idx[x]; }).length;
+  return hits >= 2 || hits === toks.length ? toks : null;
+}
+var BC = null;
+function bcIndex() {
+  if (BC && BC.n === ALL.length) return BC.map;
+  var m = {};
+  ALL.forEach(function (p) {
+    [p.SKU, p.BARCODE].forEach(function (k) { if (k) (m[String(k).toUpperCase()] = m[String(k).toUpperCase()] || []).push(p); });
+  });
+  BC = { n: ALL.length, map: m };
+  return m;
+}
+var LIST_MISSING = [];
+
 function apply() {
   var q = filt.q.toLowerCase().trim();
+  var list = barcodeList(filt.q || "");
+  LIST_MISSING = [];
+  var inList = null;
+  if (list) {
+    var idx = bcIndex(); inList = {};
+    list.forEach(function (k, i) {
+      if (!idx[k]) { if (LIST_MISSING.indexOf(k) < 0) LIST_MISSING.push(k); return; }
+      idx[k].forEach(function (p) { if (!(p.SKU in inList)) inList[p.SKU] = i; });
+    });
+    q = "";
+  }
 
   VIEW = ALL.filter(function (p) {
+    if (inList && !(p.SKU in inList)) return false;
+    if (filt.owners.size && !filt.owners.has(ownerOf(p))) return false;
     if (filt.locs.size && !filt.locs.has(trayOf(p))) return false;
     if (filt.cats.size && !filt.cats.has(p.CATEGORY)) return false;
     if (filt.tones.size && !filt.tones.has(p.METAL_COLOR)) return false;
@@ -869,7 +924,9 @@ function apply() {
   });
 
   var s = filt.sort;
+  if (inList && s === "sku") { VIEW.sort(function (a, b) { return inList[a.SKU] - inList[b.SKU]; }); s = "__list"; }
   VIEW.sort(function (a, b) {
+    if (s === "__list") return 0;
     if (s === "ct-desc")    return (b.TOTAL_CT || 0) - (a.TOTAL_CT || 0);
     if (s === "ct-asc")     return (a.TOTAL_CT || 0) - (b.TOTAL_CT || 0);
     if (s === "price-desc") return (sellOf(b) || 0) - (sellOf(a) || 0);
@@ -918,6 +975,7 @@ function cardHTML(p) {
     '" data-sku="' + esc(p.SKU) + '">' +
     '<div class="card-img">' +
       photoTag(p, 'loading="lazy" decoding="async"') +
+      '<span class="card-own staff-only ' + ownerCls(ownerOf(p)) + '" title="' + esc(ownerOf(p)) + '">' + esc(ownerOf(p)) + '</span>' +
       (p.TRAY && offerOf(p) !== "PROMO" ? '<span class="card-loc loc-tray" title="' + esc(p.TRAY) + '">' + esc(p.TRAY) + '</span>' : "") +
       (offerOf(p) ? '<span class="card-offer off-' + esc(offerOf(p)) + (p.TRAY && offerOf(p) !== "PROMO" ? " below" : "") + '">' + esc(offerOf(p)) + '</span>' : "") +
       (st !== "AVAILABLE" ? '<span class="status st-' + esc(st.replace(/\s/g, "")) + '">' + esc(st) + '</span>' : "") +
@@ -979,6 +1037,9 @@ function openDetail(sku) {
   var list = imgs(p);
 
   $("#dSku").textContent = p.SKU;
+  var own = $("#dOwn");
+  if (!own) { own = document.createElement("span"); own.id = "dOwn"; $("#dLoc").parentNode.insertBefore(own, $("#dLoc")); }
+  own.className = "badge staff-only " + ownerCls(ownerOf(p)); own.textContent = ownerOf(p);
   var loc = $("#dLoc");
   loc.hidden = !p.TRAY;
   loc.textContent = p.TRAY || "";
@@ -1103,6 +1164,112 @@ function stepDetail(dir) {
   openDetail(VIEW[j].SKU);
 }
 
+/* ------------------------------------------------------------- tally */
+/* Stock tally by owner and category - for the daily count at the booth.
+   IN STOCK = everything not SOLD (available + hold + memo out). */
+function tallyData(list) {
+  var cats = [], owners = [], m = {}, sum = {};
+  list.forEach(function (p) {
+    var o = ownerOf(p), c = p.CATEGORY || "OTHER", st = availOf(p);
+    if (cats.indexOf(c) < 0) cats.push(c);
+    if (owners.indexOf(o) < 0) owners.push(o);
+    var k = o + "|" + c; m[k] = m[k] || { all: 0, inn: 0 }; m[k].all++; if (st !== "SOLD") m[k].inn++;
+    var s = sum[o] = sum[o] || { all: 0, sold: 0, hold: 0, memo: 0, avail: 0, val: 0, soldVal: 0 };
+    s.all++;
+    if (st === "SOLD") { s.sold++; s.soldVal += aedOf(p) || 0; }
+    else { if (st === "HOLD") s.hold++; else if (st === "MEMO OUT") s.memo++; else s.avail++; s.val += aedOf(p) || 0; }
+  });
+  var order = ["RING", "EARRING", "BRACELET", "ETERNITY BAND", "NECKLACE", "PENDANT", "BANGLE", "CHAIN"];
+  cats.sort(function (a, b) { return (order.indexOf(a) + 99) % 99 - (order.indexOf(b) + 99) % 99 || (a < b ? -1 : 1); });
+  owners.sort(function (a, b) { return (a !== "LEEBA") - (b !== "LEEBA") || (a < b ? -1 : 1); });
+  return { cats: cats, owners: owners, m: m, sum: sum };
+}
+function renderTally() {
+  var d = tallyData(ALL), H = [];
+  var tot = { all: 0, sold: 0, hold: 0, memo: 0, avail: 0, val: 0, soldVal: 0 };
+  H.push('<table class="tally-t"><thead><tr><th>OWNER</th><th>TOTAL</th><th>AVAILABLE</th><th>HOLD</th><th>MEMO</th>' +
+         '<th>SOLD</th><th>IN STOCK</th><th>IN-STOCK VALUE</th><th>SOLD VALUE</th></tr></thead><tbody>');
+  d.owners.forEach(function (o) {
+    var s = d.sum[o];
+    Object.keys(tot).forEach(function (k) { tot[k] += s[k]; });
+    H.push('<tr><td><span class="badge ' + ownerCls(o) + '">' + esc(o) + '</span></td><td>' + s.all + '</td><td>' + s.avail +
+           '</td><td>' + s.hold + '</td><td>' + s.memo + '</td><td>' + s.sold + '</td><td><b>' + (s.all - s.sold) +
+           '</b></td><td>' + aed(Math.round(s.val)) + '</td><td>' + aed(Math.round(s.soldVal)) + '</td></tr>');
+  });
+  H.push('<tr class="tot"><td>ALL</td><td>' + tot.all + '</td><td>' + tot.avail + '</td><td>' + tot.hold + '</td><td>' + tot.memo +
+         '</td><td>' + tot.sold + '</td><td><b>' + (tot.all - tot.sold) + '</b></td><td>' + aed(Math.round(tot.val)) +
+         '</td><td>' + aed(Math.round(tot.soldVal)) + '</td></tr></tbody></table>');
+  H.push('<h4>IN STOCK BY CATEGORY <small>(pieces not sold)</small></h4><table class="tally-t"><thead><tr><th>OWNER</th>');
+  d.cats.forEach(function (c) { H.push('<th>' + esc(c) + '</th>'); });
+  H.push('<th>TOTAL</th></tr></thead><tbody>');
+  var colTot = {}, grand = 0;
+  d.owners.forEach(function (o) {
+    var rowT = 0; H.push('<tr><td><span class="badge ' + ownerCls(o) + '">' + esc(o) + '</span></td>');
+    d.cats.forEach(function (c) {
+      var v = (d.m[o + "|" + c] || {}).inn || 0; rowT += v; colTot[c] = (colTot[c] || 0) + v;
+      H.push('<td>' + (v || "&ndash;") + '</td>');
+    });
+    grand += rowT; H.push('<td><b>' + rowT + '</b></td></tr>');
+  });
+  H.push('<tr class="tot"><td>ALL</td>');
+  d.cats.forEach(function (c) { H.push('<td>' + (colTot[c] || 0) + '</td>'); });
+  H.push('<td><b>' + grand + '</b></td></tr></tbody></table>');
+  $("#tallyBody").innerHTML = H.join("");
+  $("#tallyWhen").textContent = "Live status - " + new Date().toLocaleString("en-GB", { timeZone: "Asia/Dubai" }) + " (Dubai)";
+}
+function openTally() {
+  if (!$("#tally")) {
+    var el = document.createElement("div");
+    el.className = "modal"; el.id = "tally"; el.hidden = true;
+    el.innerHTML = '<div class="modal-card tally-card"><button class="modal-x" id="tallyX" title="Close">&times;</button>' +
+      '<div class="tally-head"><h3>STOCK TALLY</h3><span id="tallyWhen"></span></div>' +
+      '<div class="tally-scroll" id="tallyBody"></div>' +
+      '<div class="tally-foot"><button class="btn btn-gold" id="tallyExp">EXPORT TALLY + FULL LIST</button></div></div>';
+    document.body.appendChild(el);
+    $("#tallyX").addEventListener("click", function () { el.hidden = true; });
+    el.addEventListener("click", function (e) { if (e.target === el) el.hidden = true; });
+    $("#tallyExp").addEventListener("click", function () { exportRows(ALL.slice(), "stock-tally"); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") el.hidden = true; });
+  }
+  renderTally(); $("#tally").hidden = false;
+}
+function tallySheet(wb, list) {
+  var d = tallyData(list), ws = wb.addWorksheet("TALLY");
+  ws.addRow(["STOCK TALLY - " + SHOW_NAME]);
+  ws.addRow([list.length + " pieces - " + new Date().toLocaleString("en-GB", { timeZone: "Asia/Dubai" }) + " (Dubai)"]);
+  ws.addRow([]);
+  ws.addRow(["OWNER", "TOTAL", "AVAILABLE", "HOLD", "MEMO OUT", "SOLD", "IN STOCK", "IN-STOCK VALUE (AED)", "SOLD VALUE (AED)"]);
+  d.owners.forEach(function (o) {
+    var s = d.sum[o];
+    ws.addRow([o, s.all, s.avail, s.hold, s.memo, s.sold, s.all - s.sold, Math.round(s.val), Math.round(s.soldVal)]);
+  });
+  var n = d.owners.length, r0 = 5, r1 = 4 + n;
+  var tr = ws.addRow(["ALL"].concat(["B", "C", "D", "E", "F", "G", "H", "I"].map(function (c) {
+    return { formula: "SUM(" + c + r0 + ":" + c + r1 + ")" };
+  })));
+  tr.font = { bold: true, name: "Arial" };
+  ws.addRow([]);
+  var hr = ws.addRow(["IN STOCK BY CATEGORY (not sold)"].concat(d.cats).concat(["TOTAL"]));
+  hr.font = { bold: true, name: "Arial" };
+  var first = hr.number + 1;
+  d.owners.forEach(function (o) {
+    var vals = d.cats.map(function (c) { return (d.m[o + "|" + c] || {}).inn || 0; });
+    var r = ws.addRow([o].concat(vals));
+    var last = String.fromCharCode(65 + d.cats.length);
+    r.getCell(d.cats.length + 2).value = { formula: "SUM(B" + r.number + ":" + last + r.number + ")" };
+  });
+  var lastRow = first + n - 1, cols = d.cats.length + 1;
+  var t2 = ws.addRow(["ALL"]);
+  for (var c = 2; c <= cols + 1; c++) {
+    var L = String.fromCharCode(64 + c);
+    t2.getCell(c).value = { formula: "SUM(" + L + first + ":" + L + lastRow + ")" };
+  }
+  t2.font = { bold: true, name: "Arial" };
+  ws.getCell("A1").font = { bold: true, size: 13, name: "Arial", color: { argb: "FF0F4040" } };
+  [8, 9].forEach(function (c) { ws.getColumn(c).numFmt = "#,##0"; });
+  return ws;
+}
+
 /* ------------------------------------------------------------ export */
 function exportRows(picked, label) {
   if (!picked.length) { toast("Nothing selected"); return; }
@@ -1116,6 +1283,9 @@ function exportRows(picked, label) {
               "CENTRE STONE", "QUALITY", "SHAPES", "CERT", "AVAILABILITY",
               "SELLING PRICE (AED)", "SELLING PRICE (USD)", "PER CARAT (AED)", "OFFER", "NORMAL PRICE (AED)"];
   if (HAS_LOC) head.splice(2, 0, "TRAY");
+  var withOwner = !!staff;
+  if (withOwner) head.splice(2, 0, "OWNER");
+  head.push("BARCODE", "PHOTO");
   if (cost) head = head.concat(["COST (USD)", "MARKUP"]);
 
   var s1 = wb.addWorksheet("COLLECTION");
@@ -1134,6 +1304,9 @@ function exportRows(picked, label) {
       aedOf(p) || "ON REQUEST", sellOf(p) || "", p.SELL_PER_CT_USD ? Math.round(p.SELL_PER_CT_USD * RATE) : "",
       offerOf(p), wasAED(p) || ""];
     if (HAS_LOC) row.splice(2, 0, p.TRAY || "");
+    if (withOwner) row.splice(2, 0, ownerOf(p));
+    var ph = firstPhoto(p);
+    row.push(p.BARCODE || p.SKU, ph ? { text: "photo", hyperlink: new URL(srcFor(ph), location.href).href } : "");
     if (cost) {
       var c = cost[p.SKU] || {};
       row = row.concat([c.cost || "", c.markup || ""]);
@@ -1153,7 +1326,9 @@ function exportRows(picked, label) {
     });
   });
 
-  [[s1, 4], [s2, 1]].forEach(function (pair) {
+  var sheets = [[s1, 4], [s2, 1]];
+  if (withOwner) { var s3 = tallySheet(wb, picked); sheets.push([s3, 4]); }
+  sheets.forEach(function (pair) {
     var ws = pair[0], hr = pair[1];
     ws.getRow(hr).eachCell(function (c) {
       c.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10, name: "Arial" };
@@ -1520,6 +1695,15 @@ function wire() {
     $("#qClear").hidden = !v;
     clearTimeout(t); t = setTimeout(function () { filt.q = v; activeColl = -1; syncColl(); apply(); }, 130);
   });
+  // a search box drops line breaks on paste - turn a pasted column of barcodes into "A, B, C"
+  $("#q").addEventListener("paste", function (e) {
+    var txt = (e.clipboardData || window.clipboardData || { getData: function () { return ""; } }).getData("text");
+    if (!/[\r\n\t]/.test(txt)) return;
+    e.preventDefault();
+    var v = txt.split(/[\r\n\t]+/).map(function (x) { return x.trim(); }).filter(Boolean).join(", ");
+    this.value = v; $("#qClear").hidden = !v;
+    filt.q = v; activeColl = -1; syncColl(); apply();
+  });
   $("#qClear").addEventListener("click", function () {
     $("#q").value = ""; filt.q = ""; this.hidden = true; apply(); $("#q").focus();
   });
@@ -1648,6 +1832,7 @@ function wire() {
   $("#staffBtn").addEventListener("click", openStaff);
   $("#syncPill").addEventListener("click", function () { if (STOCK_ON) (staff ? openSalesPanel : openStaff)(); });
   $("#salesBtn").addEventListener("click", openSalesPanel);
+  $("#tallyBtn").addEventListener("click", openTally);
 
   // sale form
   $("#saleClient").addEventListener("input", saleReady);
