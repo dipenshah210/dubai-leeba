@@ -613,3 +613,24 @@ body:not(.is-staff) .staff-only{display:none!important}
   .stat-btn{margin-left:6px;padding:3px 7px}
 }
 .tally-card .modal-x{background:none;border:0;font-size:26px;color:var(--teal-x)}
+
+/* ------------------------------------------------ phones: detail fits the screen
+   (13 Nov 2026) long barcodes wrap instead of running under the arrows, the
+   footer is compact so the details get the room, and every text box is 16px so
+   iPhone / Android never zoom the page in when one is tapped. */
+@media (max-width:860px){
+  input,select,textarea{font-size:16px!important}
+  .modal-card{height:100vh;height:100dvh;max-height:100vh;max-height:100dvh}
+  .d-bar-id{overflow:hidden}
+  .d-bar-id h2{white-space:normal;overflow-wrap:anywhere;font-size:15px;line-height:1.2;min-width:0}
+  .d-nav,.d-close{flex:0 0 auto;padding:6px 10px}
+  .d-foot{padding:7px 10px calc(7px + var(--safe-b));gap:7px}
+  .d-avail label{margin-bottom:4px}
+  .d-avail .chips{flex-wrap:nowrap;gap:4px}
+  .d-avail .chip{flex:1 1 0;padding:6px 2px;font-size:10px;text-align:center;white-space:nowrap}
+  .d-foot .btn{padding:9px 10px}
+  .detail-img:not(:has(img[src])){display:none}
+  .dna{min-width:0;font-size:11px}
+  .dna th{padding:6px 5px;font-size:8.5px;white-space:normal}
+  .dna td{padding:5px 5px;white-space:normal}
+}

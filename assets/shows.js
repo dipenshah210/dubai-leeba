@@ -888,6 +888,85 @@ function bcIndex() {
 }
 var LIST_MISSING = [];
 
+/* ---------------------------------------------------------- free search
+   Every word must match (AND). Words can be:
+     text      barcode, description, category, shape, colour, clarity, metal, cert...
+               shop short forms work both ways: RD = ROUND, HRT = HEART, WG = WHITE ...
+     1.70      a number matches carat (total, centre, any stone line), gross / net
+               weight or purity - at the precision typed (1.7 = 1.65-1.75)
+     1.5ct     carat only          5g / 5gm   gross or net weight only
+     18k       purity only         1-2ct      a range (also 3-5g, 1-2)
+     aed5000   price around that figure (also 5000aed, $1500, 1500usd)        */
+var ABBR = { RD: "ROUND", HRT: "HEART", PR: "PEAR", PS: "PEAR", EM: "EMERALD", ED: "EMERALD", MQ: "MARQUISE",
+  OV: "OVAL", CUS: "CUSHION", CU: "CUSHION", PRN: "PRINCESS", PC: "PRINCESS", RAD: "RADIANT", BAG: "BAGUETTE",
+  BUG: "BAGUETTE", BUGUETTE: "BAGUETTE", TRI: "TRIANGLE", SQ: "SQUARE", ASH: "ASSCHER",
+  WG: "WHITE", YG: "YELLOW", RG: "ROSE", PG: "ROSE", MG: "MIX", TT: "TWO TONE",
+  ER: "EARRING", EARING: "EARRING", STUDS: "EARRING", BR: "BRACELET", BRACLET: "BRACELET", NK: "NECKLACE",
+  PN: "PENDANT", PENDENT: "PENDANT", RN: "RING", RG_: "RING", BAND: "ETERNITY BAND", ETERNITY: "ETERNITY BAND",
+  LGD: "LAB GROWN", LAB: "LAB GROWN" };
+var FULL = {};
+Object.keys(ABBR).forEach(function (k) { (FULL[ABBR[k]] = FULL[ABBR[k]] || []).push(k.replace(/_$/, "")); });
+function hayOf(p) {
+  if (p._hay) return p._hay;
+  var bits = [p.SKU, p.BARCODE, p.TRAY, p.DESCRIPTION, p.CATEGORY, p.SHAPES, p.CENTER_SHAPE, p.QUALITY,
+              p.METAL_RAW, p.METAL_COLOR, p.METAL_KT ? p.METAL_KT + "K " + p.METAL_KT + "KT" : "", p.CERT, p.CENTER_CERT,
+              p.CENTER_COLOR, p.CENTER_CLARITY];
+  (p.DIAMONDS || []).forEach(function (d) { bits.push(d.SHAPE, d.COLOR, d.CLARITY, d.CERT_NO, d.MM_SIEVE); });
+  var s = " " + bits.filter(Boolean).join(" ").toUpperCase().replace(/[.,+\/()\-]+(?=\D|$)/g, " ") + " ";
+  var extra = [];
+  s.split(/\s+/).forEach(function (w) {
+    if (ABBR[w]) extra.push(ABBR[w]);
+    if (FULL[w]) extra = extra.concat(FULL[w]);
+  });
+  p._hay = (s + extra.join(" ") + " ").toLowerCase();
+  return p._hay;
+}
+function caratsOf(p) {
+  var v = [p.TOTAL_CT, p.CENTER_CT, p.CENTER_STONE_CT, p.SIDE_CT];
+  (p.DIAMONDS || []).forEach(function (d) { v.push(d.CARAT, d.AVG_CT); });
+  return v.filter(function (x) { return typeof x === "number"; });
+}
+function near(vals, n, dec) {
+  var tol = 0.5 * Math.pow(10, -Math.max(dec, 0)) + 1e-9;
+  if (dec === 0) tol = 0.5;
+  return vals.some(function (v) { return Math.abs(v - n) < tol; });
+}
+function inRange(vals, a, b) { return vals.some(function (v) { return v >= a - 1e-9 && v <= b + 1e-9; }); }
+function searchTerms(q) {
+  return q.toLowerCase().split(/[\s,;]+/).filter(Boolean).map(function (w) {
+    var m, unit;
+    // price: aed5000, 5000aed, $1500, 1500usd
+    if ((m = w.match(/^(?:aed|\$|usd)(\d+(?:\.\d+)?)k?$/) || w.match(/^(\d+(?:\.\d+)?)k?(aed|usd)$/))) {
+      var amt = parseFloat(m[1]) * (/k(aed|usd)?$/.test(w) ? 1000 : 1);
+      var usd = /\$|usd/.test(w);
+      return function (p) { var v = usd ? sellOf(p) : aedOf(p); return v && Math.abs(v - amt) <= amt * 0.1; };
+    }
+    if ((m = w.match(/^(\d*\.?\d+)-(\d*\.?\d+)(ct|cts|carat|g|gm|gms|gr|grm)?$/))) {
+      var a = parseFloat(m[1]), b = parseFloat(m[2]); unit = m[3] || "";
+      return function (p) {
+        if (/^g/.test(unit)) return inRange([p.GROSS_WT_GM, p.NET_GOLD_WT_GM].filter(Boolean), a, b);
+        return inRange([p.TOTAL_CT].filter(Boolean), a, b) || (!unit && inRange([p.GROSS_WT_GM].filter(Boolean), a, b));
+      };
+    }
+    if ((m = w.match(/^(\d*\.?\d+)(ct|cts|carat|g|gm|gms|gr|grm|k|kt)?$/))) {
+      var n = parseFloat(m[1]), dec = (m[1].split(".")[1] || "").length; unit = m[2] || "";
+      return function (p) {
+        if (unit === "k" || unit === "kt") return p.METAL_KT === n;
+        if (/^g/.test(unit)) return near([p.GROSS_WT_GM, p.NET_GOLD_WT_GM].filter(Boolean), n, dec);
+        if (unit) return near(caratsOf(p), n, dec);
+        // a bare number: text (barcode, "0.50 POINT") or carat or weight
+        if (hayOf(p).indexOf(m[1]) !== -1) return true;
+        return dec > 0 && (near(caratsOf(p), n, dec) || near([p.GROSS_WT_GM, p.NET_GOLD_WT_GM].filter(Boolean), n, dec));
+      };
+    }
+    return function (p) {
+      var h = hayOf(p);
+      if (h.indexOf(w) !== -1) return true;
+      return !!(staff && ownerOf(p).toLowerCase().indexOf(w) !== -1);
+    };
+  });
+}
+
 function apply() {
   var q = filt.q.toLowerCase().trim();
   var list = barcodeList(filt.q || "");
@@ -902,6 +981,7 @@ function apply() {
     q = "";
   }
 
+  var terms = q ? searchTerms(q) : null;
   VIEW = ALL.filter(function (p) {
     if (inList && !(p.SKU in inList)) return false;
     if (filt.owners.size && !filt.owners.has(ownerOf(p))) return false;
@@ -922,11 +1002,7 @@ function apply() {
     if (filt.gwMax !== null && !(p.GROSS_WT_GM <= filt.gwMax)) return false;
     if (filt.prMin !== null && !(aedOf(p) >= filt.prMin)) return false;
     if (filt.prMax !== null && !(aedOf(p) <= filt.prMax)) return false;
-    if (q) {
-      var hay = [p.SKU, p.TRAY, p.DESCRIPTION, p.CATEGORY, p.SHAPES, p.CENTER_SHAPE, p.QUALITY,
-                 p.METAL_RAW, p.CERT, p.CENTER_CERT].join(" ").toLowerCase();
-      if (hay.indexOf(q) === -1) return false;
-    }
+    if (terms && !terms.every(function (tm) { return tm(p); })) return false;
     return true;
   });
 
