@@ -22,11 +22,11 @@ window.LEEBA_CONFIG = {
   AED_PER_USD: 3.6725,
 
   /* Shown under the logo in the header. */
-  SHOW_STRAP: "JEWELLERY &amp; WATCH SHOW &middot; ADNEC ABU DHABI &middot; 11&ndash;15 NOV 2026",
+  SHOW_STRAP: "JEWELLERY ARABIA &middot; EXHIBITION WORLD BAHRAIN &middot; FROM 24 NOV 2026",
 
   /* Show title, used in exported files and the export file name. */
-  SHOW_NAME: "LEEBA Jewels - Jewellery & Watch Show Abu Dhabi, ADNEC, 11-15 November 2026",
-  EXPORT_TAG: "JWS-ABU-DHABI",
+  SHOW_NAME: "LEEBA Jewels - Jewellery Arabia, Exhibition World Bahrain, from 24 November 2026",
+  EXPORT_TAG: "JEWELLERY-ARABIA-BAHRAIN",
 
   /* ----------------------------------------------------------------
      READY-MADE COLLECTIONS
