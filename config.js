@@ -98,6 +98,10 @@ window.LEEBA_CONFIG = {
     POLL_SECONDS: 25
   },
 
+  /* The staff exhibitions pages (dubai.leeba.co/admin/) talk to this:
+     the /exec address of the LEEBA SHOWS script. Empty = not set up yet. */
+  SHOWS_API: "",
+
   /* Cards rendered per batch while scrolling. */
   PAGE_SIZE: 120
 };
