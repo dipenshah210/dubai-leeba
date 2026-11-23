@@ -6,7 +6,7 @@
 <title>LEEBA — Jewellery Arabia Bahrain</title>
 <meta name="robots" content="noindex,nofollow">
 <link rel="preconnect" href="https://wsrv.nl" crossorigin>
-<link rel="stylesheet" href="assets/shows.css?v=202611221000">
+<link rel="stylesheet" href="assets/shows.css?v=202611231000">
 </head>
 <body>
 
@@ -261,13 +261,13 @@
       <label class="sf">CLIENT NAME
         <input id="saleClient" type="text" placeholder="Name or company" autocomplete="off"></label>
 
+      <label class="sf">CLIENT PHONE <em>optional</em>
+        <input id="salePhone" type="tel" placeholder="+973 …" autocomplete="off" inputmode="tel"></label>
+
       <label class="sf">PRICE
         <div class="sale-price">
-          <div class="chips" id="saleCur">
-            <button type="button" class="chip is-on" data-cur="AED">AED</button>
-            <button type="button" class="chip" data-cur="USD">USD</button>
-          </div>
-          <input id="salePrice" type="number" min="0" step="1" inputmode="decimal">
+          <div class="chips" id="saleCur"></div>
+          <input id="salePrice" type="number" min="0" step="any" inputmode="decimal">
         </div>
         <small id="saleList"></small></label>
 
@@ -319,8 +319,8 @@
 
 <!-- shipped with the site so exports still work when the hall wifi drops -->
 <script src="assets/exceljs.min.js"></script>
-<script src="config.js?v=202611221000"></script>
-<script src="assets/shows.js?v=202611221000"></script>
+<script src="config.js?v=202611231000"></script>
+<script src="assets/shows.js?v=202611231000"></script>
 
 </body>
 </html>

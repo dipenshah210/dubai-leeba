@@ -437,6 +437,7 @@ function build(opts) {
   var sh = opts.show || {};
   var catalog = { exhibition: "LEEBA Jewels - " + [sh.name, sh.venue, sh.dates].filter(Boolean).join(", "),
                   strap: [sh.name, sh.venue, sh.datesShort].filter(Boolean).join(" · "), tag: sh.tag, mode: "show", currency: "USD",
+                  saleCurrency: sh.currency && sh.currency !== "AED" ? sh.currency : undefined,
                   built: new Date().toISOString().slice(0, 16).replace("T", " "), count: products.length,
                   products: products.map(function (p) { var o = Object.assign({}, p); delete o._how; delete o._owner_how; return o; }) };
   return { catalog: catalog, products: products, cost: cost, images: newImages, report: rep };
