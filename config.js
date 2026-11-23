@@ -104,7 +104,7 @@ window.LEEBA_CONFIG = {
 
   /* The staff exhibitions pages (dubai.leeba.co/admin/) talk to this:
      the /exec address of the LEEBA SHOWS script. Empty = not set up yet. */
-  SHOWS_API: "",
+  SHOWS_API: "https://script.google.com/macros/s/AKfycbxVq5t8yCAv8IEsx00Xqbpj2iso9QxXv2ucUek6APssoPLy2ENU57E99SNQtHZg3lVh/exec",
 
   /* Cards rendered per batch while scrolling. */
   PAGE_SIZE: 120
