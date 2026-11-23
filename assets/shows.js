@@ -1740,6 +1740,16 @@ function submitSale() {
     by: staff.who
   };
   $("#sale").hidden = true;
+  /* The stock script in use may only take some currencies (the first one took
+     AED and USD only). Anything else is saved as its AED value, with the amount
+     actually paid kept at the front of the remark: "Paid BHD 2,450". */
+  var takes = (CFG.STOCK && CFG.STOCK.CURRENCIES) || ["AED", "USD"];
+  if (takes.indexOf(sale.currency) < 0) {
+    var paid = curMoney(sale.price, sale.currency);
+    sale.price = Math.round(sale.price / (PER_USD[sale.currency] || 1) * PER_USD.AED);
+    sale.remark = ["Paid " + paid, sale.remark].filter(Boolean).join(" · ");
+    sale.currency = "AED";
+  }
   queueOp({ t: "sale", sale: sale });
   if (detailSku === saleSku && !$("#detail").hidden) openDetail(saleSku);
 }
