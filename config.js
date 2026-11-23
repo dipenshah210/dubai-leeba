@@ -94,12 +94,12 @@ window.LEEBA_CONFIG = {
      five-minute setup is written at the top of it.
   ---------------------------------------------------------------- */
   STOCK: {
-    URL: "https://script.google.com/macros/s/AKfycbwEh1WxFpp4eVuQRRxWBHTREk7EZDVQG1TMvFY_KnnGxx5OYhfU17pgwikAYsUCZeV0/exec",
+    URL: "https://script.google.com/macros/s/AKfycbxVq5t8yCAv8IEsx00Xqbpj2iso9QxXv2ucUek6APssoPLy2ENU57E99SNQtHZg3lVh/exec",
     POLL_SECONDS: 25,
     /* Currencies the stock script accepts. Others (e.g. BHD) are saved as their
        AED value with "Paid BHD ..." in the remark. The new LEEBA SHOWS script
        takes any currency: when switching to it, list them all here. */
-    CURRENCIES: ["AED", "USD"]
+    CURRENCIES: ["AED", "USD", "BHD", "SAR", "QAR", "OMR", "KWD"]
   },
 
   /* The staff exhibitions pages (dubai.leeba.co/admin/) talk to this:
