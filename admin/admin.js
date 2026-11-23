@@ -20,7 +20,16 @@ var RATES = { AED: 1, USD: 3.6725, BHD: 9.7406, SAR: 0.9793, QAR: 1.0089, OMR: 9
 var ORDER = ["RING", "EARRING", "BRACELET", "ETERNITY BAND", "NECKLACE", "PENDANT", "BANGLE", "CHAIN"];
 
 var me = null, shows = [], cache = {};
-try { me = JSON.parse(localStorage.getItem(KEY + "me") || "null"); } catch (e) { me = null; }
+/* One sign-in for the whole site: the staff pages and the catalogue page share
+   the same saved staff session, so signing in (or out) on one does the same on the other. */
+var STAFF_KEY = "leeba.shj.staff";
+function loadMe() {
+  try { var raw = localStorage.getItem(STAFF_KEY) || sessionStorage.getItem(STAFF_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+function saveMe() { try { localStorage.setItem(STAFF_KEY, JSON.stringify(me)); } catch (e) {} }
+me = loadMe();
+if (me && !me.role) me.role = "SALES";      // signed in on the catalogue page: role comes with the first reply
+window.addEventListener("storage", function (e) { if (e.key === STAFF_KEY) { me = loadMe(); route(); } });
 
 /* ------------------------------------------------------------ helpers */
 var $ = function (s, r) { return (r || document).querySelector(s); };
@@ -61,7 +70,7 @@ function guard(j) {
   if (!j || !j.ok) throw new Error((j && j.error) || "No reply from the server");
   return j;
 }
-function signOut() { me = null; try { localStorage.removeItem(KEY + "me"); } catch (e) {} cache = {}; route(); }
+function signOut() { me = null; try { localStorage.removeItem(STAFF_KEY); sessionStorage.removeItem(STAFF_KEY); } catch (e) {} cache = {}; route(); }
 
 /* ------------------------------------------------------------- Excel */
 /* sheets: [{name, title, head:[...], rows:[[...]], widths:[...], money:[colIndex...]}] */
@@ -145,7 +154,7 @@ function viewLogin() {
       .then(function (j) {
         if (!j.ok) throw new Error("That code was not accepted.");
         me = { code: code, token: j.token, who: j.who, role: j.role || "SALES" };
-        try { localStorage.setItem(KEY + "me", JSON.stringify(me)); } catch (e2) {}
+        saveMe();
         route();
       })
       .catch(function (err) { $("#lerr").hidden = false; $("#lerr").textContent = err.message === "Failed to fetch" ? "Cannot reach the server." : err.message; });
@@ -157,7 +166,7 @@ $("#signOut").onclick = signOut;
 function loadShows() {
   return get("shows").then(function (j) {
     shows = j.shows || [];
-    if (j.role && me.role !== j.role) { me.role = j.role; try { localStorage.setItem(KEY + "me", JSON.stringify(me)); } catch (e) {} }
+    if (j.role && me.role !== j.role) { me.role = j.role; saveMe(); }
     return shows;
   });
 }
