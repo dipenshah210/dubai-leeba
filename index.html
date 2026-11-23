@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>LEEBA — Jewellery Arabia Bahrain</title>
 <meta name="robots" content="noindex,nofollow">
+<script>
+/* dubai.leeba.co has moved to shows.leeba.co. A device that still holds sales or
+   status changes not yet sent stays here until they are sent, then moves. */
+(function () {
+  function pending() { try { return JSON.parse(localStorage.getItem("leeba.shj.outbox") || "[]").length; } catch (e) { return 0; } }
+  function go() { location.replace("https://shows.leeba.co" + location.pathname + location.search + location.hash); }
+  if (!pending()) return go();
+  var t = setInterval(function () { if (!pending()) { clearInterval(t); go(); } }, 5000);
+})();
+</script>
 <link rel="preconnect" href="https://wsrv.nl" crossorigin>
 <link rel="stylesheet" href="assets/shows.css?v=202611241100">
 </head>
